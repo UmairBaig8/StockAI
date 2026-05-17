@@ -18,9 +18,24 @@ A production-grade, multi-agent trading system for the Indian Stock Market (NSE/
 
 ## Quick Install
 
+**Local (macOS, Linux):**
 ```bash
 curl -sSL https://raw.githubusercontent.com/UmairBaig8/StockAI/main/install.sh | bash
 ```
+
+**AWS EC2 (one command):**
+```bash
+# Requires: AWS CLI authenticated + DeepSeek key
+aws sso login
+MEMORY_DEEPSEEK_API_KEY=sk-... bash aws-deploy.sh
+```
+Creates t2.small, security group, deploys via user-data. Prints dashboard URL when ready.
+
+**Fresh EC2 instance (run inside the EC2 shell):**
+```bash
+MEMORY_DEEPSEEK_API_KEY=sk-... curl -sSL https://raw.githubusercontent.com/UmairBaig8/StockAI/main/install.sh | sudo bash
+```
+Auto-installs Docker, clones repo, builds, starts. No Go/Rust/Python needed on host.
 
 ## Architecture
 

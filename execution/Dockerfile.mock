@@ -1,0 +1,15 @@
+FROM rust:1.84-slim AS builder
+
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock ./
+COPY src/ ./src/
+
+RUN cargo build --release --bin mock-broker
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/target/release/mock-broker /usr/local/bin/mock-broker
+
+CMD ["mock-broker"]

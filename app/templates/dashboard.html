@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockAI — Monitor</title>
+    <style>
+        :root{--bg:#0b0b10;--fg:#c0c0c0;--accent:#00ff88;--warn:#ffaa00;--err:#ff4444;--card:#12121a;--border:#1e1e2e;--muted:#666}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'SF Mono','JetBrains Mono','Cascadia Code',monospace;background:var(--bg);color:var(--fg);padding:16px;min-height:100vh}
+        header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:8px}
+        h1{font-size:1.1rem;color:var(--accent)}h1 span{color:var(--muted);font-weight:400}
+        .badge{font-size:0.65rem;padding:3px 8px;border-radius:4px;background:#1a1a2e;border:1px solid var(--border)}
+        .grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+        .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
+        .card h2{font-size:0.8rem;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px}
+        .card.wide{grid-column:1/-1}
+        .card.half{grid-column:auto}
+        .service-row{display:flex;gap:8px;flex-wrap:wrap}
+        .service{flex:1;min-width:100px;text-align:center;padding:10px;border-radius:6px;background:#0f0f17;border:1px solid var(--border)}
+        .service .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+        .dot.online{background:var(--accent)}.dot.offline{background:var(--err)}.dot.unknown{background:var(--warn)}
+        .service .name{font-size:0.65rem;color:var(--muted);display:block;margin-top:2px}
+        .stat-row{display:flex;gap:8px;flex-wrap:wrap}
+        .stat{flex:1;min-width:80px;padding:10px 12px;background:#0f0f17;border:1px solid var(--border);border-radius:6px;text-align:center}
+        .stat .val{font-size:1.2rem;font-weight:600;display:block}
+        .stat .lbl{font-size:0.6rem;color:var(--muted);text-transform:uppercase;margin-top:2px}
+        .val.green{color:var(--accent)}.val.red{color:var(--err)}.val.muted{color:var(--fg)}
+        table{width:100%;font-size:0.65rem;border-collapse:collapse}
+        th{text-align:left;color:var(--muted);padding:3px 5px;border-bottom:1px solid var(--border);font-weight:400;white-space:nowrap}
+        td{padding:2px 5px;border-bottom:1px solid #1a1a24;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        td.ticker{max-width:50px}
+        .up{color:var(--accent)}.down{color:var(--err)}
+        .log{font-size:0.6rem;max-height:150px;overflow-y:auto;line-height:1.5}
+        .log div{padding:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .log .ts{color:var(--muted);margin-right:6px}
+        .log .info{color:var(--accent)}.log .warn{color:var(--warn)}.log .err{color:var(--err)}
+        .rules{font-size:0.62rem;color:var(--accent);line-height:1.5}
+        .rules div{padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .footer{text-align:center;font-size:0.6rem;color:var(--muted);margin-top:16px;grid-column:1/-1}
+        .refresh{font-size:0.6rem;color:var(--muted);animation:pulse 2s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+        @media(max-width:700px){body{padding:8px}.grid{grid-template-columns:1fr}.card.half{grid-column:1/-1}}
+    </style>
+</head>
+<body>
+<header>
+    <h1>StockAI <span>Monitor v0.3</span></h1>
+    <div>
+        <span class="badge" id="llm-badge">LLM: --</span>
+        <span class="badge" id="clock">--</span>
+        <span class="refresh">&#9679; LIVE</span>
+    </div>
+</header>
+
+<div class="grid">
+    <!-- Services -->
+    <div class="card wide">
+        <h2>Services</h2>
+        <div class="service-row" id="services">
+            <div class="service"><span class="dot unknown"></span><span class="name">Memory</span></div>
+            <div class="service"><span class="dot unknown"></span><span class="name">Engine</span></div>
+            <div class="service"><span class="dot unknown"></span><span class="name">Orchtr</span></div>
+            <div class="service"><span class="dot unknown"></span><span class="name">Redis</span></div>
+            <div class="service"><span class="dot unknown"></span><span class="name">LLM</span></div>
+        </div>
+    </div>
+
+    <!-- Market -->
+    <div class="card wide">
+        <h2>Live Market (NSE via yfinance)</h2>
+        <table><thead><tr><th>Ticker</th><th>LTP</th><th>Bid</th><th>Ask</th><th>Spread</th><th>Vol</th><th></th></tr></thead>
+        <tbody id="market-body"><tr><td colspan="7" style="color:var(--muted)">Connecting...</td></tr></tbody></table>
+    </div>
+
+    <!-- Portfolio Summary -->
+    <div class="card half">
+        <h2>Portfolio Summary</h2>
+        <div class="stat-row" id="summary">
+            <div class="stat"><span class="val muted" id="s-invested">--</span><span class="lbl">Invested</span></div>
+            <div class="stat"><span class="val muted" id="s-pnl">--</span><span class="lbl">P&L</span></div>
+            <div class="stat"><span class="val muted" id="s-pnlpct">--</span><span class="lbl">P&L %</span></div>
+            <div class="stat"><span class="val muted" id="s-trades">--</span><span class="lbl">Trades</span></div>
+            <div class="stat"><span class="val muted" id="s-winrate">--</span><span class="lbl">Win Rate</span></div>
+        </div>
+    </div>
+
+    <!-- Recent Executions -->
+    <div class="card half">
+        <h2>Recent Executions</h2>
+        <div style="max-height:120px;overflow-y:auto">
+            <table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>@</th><th>P&L</th><th>St</th></tr></thead>
+            <tbody id="trades-body"><tr><td colspan="7" style="color:var(--muted)">No trades yet</td></tr></tbody></table>
+        </div>
+    </div>
+
+    <!-- Evolution Memory -->
+    <div class="card half">
+        <h2>Evolution Memory</h2>
+        <div style="font-size:0.75rem">
+            <div>Entries: <strong id="mem-entries">--</strong> &middot; Last: <span id="mem-last">--</span></div>
+            <div style="margin-top:6px;font-size:0.55rem;color:var(--muted);text-transform:uppercase">Latest Rules</div>
+            <div class="rules" id="mem-rules">--</div>
+        </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="card half">
+        <h2>Event Log</h2>
+        <div class="log" id="log"><div class="ts">--</div></div>
+    </div>
+
+    <div class="footer">refresh 2s &middot; market ws realtime &middot; StockAI v0.3</div>
+</div>
+
+<script>
+const $ = s => document.getElementById(s);
+const ts = () => new Date().toLocaleTimeString('en-IN',{hour12:false,timeZone:'Asia/Kolkata'});
+const fmtTime = t => t ? t.split('T')[1]?.split('.')[0]?.slice(0,5) || '--' : '--';
+
+function log(msg, cls='info'){
+    const d = $('log');
+    d.innerHTML = `<div><span class="ts">[${ts()}]</span><span class="${cls}">${msg}</span></div>` + d.innerHTML;
+    if(d.children.length > 80) d.lastChild?.remove();
+}
+
+setInterval(()=>{$('clock').textContent='IST '+ts()},1000);
+
+async function checkHealth(){
+    try{
+        const r = await fetch('/api/v1/services');
+        const svc = await r.json();
+        updateServiceDot(0, svc.memory?.online);
+        updateServiceDot(1, svc.engine?.online);
+        updateServiceDot(2, svc.orchestrator?.online);
+        updateServiceDot(3, svc.redis?.online);
+        updateServiceDot(4, svc.llm?.online);
+    }catch(e){}
+    try{
+        const r = await fetch('/api/v1/health');
+        const d = await r.json();
+        $('mem-entries').textContent = d.entries;
+        $('llm-badge').textContent = 'LLM: '+d.provider;
+    }catch(e){}
+}
+function updateServiceDot(idx, ok){
+    const dots = document.querySelectorAll('#services .dot');
+    const names = document.querySelectorAll('#services .name');
+    if(dots[idx]){
+        dots[idx].className = 'dot '+(ok?'online':'offline');
+        names[idx].style.color = ok?'var(--fg)':'var(--err)';
+    }
+}
+
+let mkt = {};
+const ws = new WebSocket(`ws://${location.host}/ws/market`);
+ws.onopen = ()=>log('Market feed connected','info');
+ws.onclose = ()=>log('Market feed disconnected','warn');
+ws.onmessage = e=>{
+    try{
+        const msg = JSON.parse(e.data);
+        if(msg.type==='quote'){
+            mkt[msg.data.ticker] = msg.data;
+            renderMarket();
+        }
+    }catch(ex){}
+};
+
+function renderMarket(){
+    const t = $('market-body');
+    const order = ['RELIANCE','TATAPOWER','HAL','BEL','SBIN'];
+    t.innerHTML = order.map(tk=>{
+        const d = mkt[tk];
+        if(!d) return `<tr><td>${tk}</td><td colspan="6" style="color:var(--muted)">waiting...</td></tr>`;
+        const trend = d.trend==='up'?'up':'down';
+        const arrow = d.trend==='up'?'&#9650;':'&#9660;';
+        const spread = ((d.ask-d.bid)/d.last_price*100).toFixed(2);
+        return `<tr><td>${tk}</td><td>${d.last_price.toFixed(2)}</td><td>${d.bid.toFixed(2)}</td><td>${d.ask.toFixed(2)}</td><td>${spread}%</td><td>${(d.volume/1000).toFixed(0)}k</td><td class="${trend}">${arrow}</td></tr>`;
+    }).join('');
+}
+
+async function pollDash(){
+    checkHealth();
+    try{
+        const r = await fetch('/api/v1/dash');
+        const d = await r.json();
+
+        // Summary
+        const inv = d.summary?.invested || 0;
+        const pnl = d.summary?.pnl || 0;
+        const pnlPct = d.summary?.pnl_percent || 0;
+        const winRate = d.summary?.win_rate || 0;
+        const total = d.summary?.total_trades || 0;
+
+        $('s-invested').textContent = '₹'+inv.toLocaleString('en-IN');
+        $('s-invested').className = 'val '+(inv>0?'muted':'muted');
+
+        $('s-pnl').textContent = (pnl>=0?'+':'')+'₹'+Math.abs(pnl).toLocaleString('en-IN',{minimumFractionDigits:2});
+        $('s-pnl').className = 'val '+(pnl>=0?'green':'red');
+
+        $('s-pnlpct').textContent = (pnlPct>=0?'+':'')+pnlPct.toFixed(2)+'%';
+        $('s-pnlpct').className = 'val '+(pnlPct>=0?'green':'red');
+
+        $('s-trades').textContent = total;
+        $('s-trades').className = 'val muted';
+
+        $('s-winrate').textContent = winRate.toFixed(0)+'%';
+        $('s-winrate').className = 'val '+(winRate>=50?'green':'red');
+
+        // Trades
+        const tt = $('trades-body');
+        if(d.trades?.length) tt.innerHTML = d.trades.map(tr=>{
+            const tm = fmtTime(tr.time);
+            const pnlCls = tr.pnl>0?'green':'red';
+            const pnlStr = (tr.pnl>0?'+':'')+tr.pnl.toFixed(2)+'%';
+            const entry = tr.entry_price||0;
+            return `<tr><td>${tm}</td><td class="ticker" title="${tr.ticker}">${tr.ticker}</td><td>${tr.dir.slice(0,1)}</td><td>${tr.qty||0}</td><td>${entry.toFixed(1)}</td><td style="color:var(--${pnlCls})">${pnlStr}</td><td style="color:${tr.status==='WIN'?'var(--accent)':'var(--err)'}">${tr.status}</td></tr>`;
+        }).join('');
+
+        // Memory
+        $('mem-last').textContent = d.last_postmortem||'--';
+        if(d.recent_rules?.length) $('mem-rules').innerHTML = d.recent_rules.slice(0,4).map(r=>`<div>&#9656; ${r}</div>`).join('');
+
+        // Log
+        d.events?.forEach(ev=>log(ev.msg, ev.level));
+    }catch(e){}
+}
+
+setInterval(pollDash, 2000);
+pollDash();
+</script>
+</body>
+</html>

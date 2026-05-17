@@ -1,0 +1,45 @@
+# Secrets
+.env
+
+# Go
+bin/
+*.exe
+
+# Rust
+execution/target/
+**/*.rs.bk
+*.pdb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+*.egg-info/
+dist/
+build/
+uv.lock
+
+# Data
+data/
+*.db
+**/.lance/
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.playwright-mcp/
+
+# OS
+Thumbs.db

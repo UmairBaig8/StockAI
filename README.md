@@ -19,7 +19,7 @@ A production-grade, multi-agent trading system for the Indian Stock Market (NSE/
 ## Quick Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/anomalyco/stockai/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/UmairBaig8/StockAI/main/install.sh | bash
 ```
 
 ## Architecture

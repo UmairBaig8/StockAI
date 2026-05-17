@@ -21,7 +21,7 @@ banner
 # Clone / enter project
 if [ ! -d "StockAI" ]; then
   echo -e "${CYAN}>>> Cloning StockAI...${NC}"
-  git clone https://github.com/anomalyco/stockai.git 2>/dev/null || {
+  git clone https://github.com/UmairBaig8/StockAI.git 2>/dev/null || {
     echo -e "${RED}Clone failed. Download manually from GitHub.${NC}"
     exit 1
   }

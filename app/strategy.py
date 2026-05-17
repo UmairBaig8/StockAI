@@ -21,7 +21,7 @@ class StrategyAgent:
         self.take_profit_pct = 2.0
         self.stop_loss_pct = 3.0
         self.rsi_period = 14
-        self.rsi_oversold = 35
+        self.rsi_oversold = 45  # More lenient for catching opportunities
         self.rsi_overbought = 70
         self.redis_url = os.getenv("REDIS_ADDR", "redis://redis:6379")
         self.memory_url = os.getenv("MEMORY_URL", "http://memory:8000")
@@ -39,9 +39,17 @@ class StrategyAgent:
 
     async def run(self):
         logger.info("Strategy Agent started — scanning market for signals...")
+        last_heartbeat = 0
 
         while True:
-            await asyncio.sleep(15)  # Evaluate every 15 seconds
+            await asyncio.sleep(15)
+
+            # Heartbeat every 5 min
+            now = asyncio.get_event_loop().time()
+            if now - last_heartbeat > 300:
+                tickers = {t: f"n={len(p)}" for t, p in self.price_history.items()}
+                logger.info(f"Strategy heartbeat: wallet=₹{wallet_instance.available:,.0f} positions={len(wallet_instance.positions)} data={tickers}")
+                last_heartbeat = now
 
             wallets = wallet_instance.snapshot()
             open_count = len(wallets.get("positions", {}))

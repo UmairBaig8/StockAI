@@ -26,6 +26,7 @@ class MarketDataBridge:
         self.clients: list[WebSocket] = []
         self._running = False
         self._latest: dict[str, dict] = {}
+        self.callbacks: list = []
 
     def add_client(self, ws: WebSocket):
         self.clients.append(ws)
@@ -43,6 +44,11 @@ class MarketDataBridge:
                 quotes = await asyncio.to_thread(self._poll_yfinance)
                 for q in quotes:
                     self._latest[q["data"]["ticker"]] = q
+                    for cb in self.callbacks:
+                        try:
+                            cb(q["data"])
+                        except Exception:
+                            pass
                     for ws in self.clients:
                         try:
                             await ws.send_text(json.dumps(q))

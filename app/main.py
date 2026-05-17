@@ -9,17 +9,21 @@ from contextlib import asynccontextmanager
 from .config import get_settings
 from .market_data import MarketDataBridge
 from .router import router
+from .strategy import StrategyAgent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 bridge = MarketDataBridge()
+strategy = StrategyAgent()
+bridge.callbacks.append(strategy.feed_quote)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     asyncio.create_task(bridge.start())
-    logger.info("StockAI Memory Service ready (market data + critic + memory)")
+    asyncio.create_task(strategy.run())
+    logger.info("StockAI Memory Service ready (market + strategy + critic + memory)")
     yield
     bridge.stop()
     logger.info("StockAI Memory Service shutting down")
@@ -30,8 +34,8 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="StockAI Memory Service",
-        version="0.2.0",
-        description="Market data bridge + nightly post-mortem critic + vector memory",
+        version="0.3.0",
+        description="Auto-trading strategy + market data + critic + vector memory",
         lifespan=lifespan,
     )
 

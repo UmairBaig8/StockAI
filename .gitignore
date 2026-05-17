@@ -19,7 +19,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-uv.lock
 
 # Data
 data/
@@ -43,3 +42,5 @@ data/
 
 # OS
 Thumbs.db
+stockai-key.pem
+*.pem

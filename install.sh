@@ -21,11 +21,19 @@ if ! command -v docker &>/dev/null; then
   echo -e "${CYAN}>>> Installing Docker...${NC}"
   if [ "$OS" = "Linux" ]; then
     if command -v apt-get &>/dev/null; then
+      # Ubuntu/Debian
       sudo apt-get update -y && sudo apt-get install -y docker.io docker-compose-v2
     elif command -v yum &>/dev/null; then
-      sudo yum update -y && sudo yum install -y docker
+      # Amazon Linux / RHEL — use official Docker repo (yum package is too old)
+      sudo yum update -y
+      sudo yum install -y docker
       sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
       sudo chmod +x /usr/local/bin/docker-compose
+      # Install buildx (needed for compose build)
+      sudo mkdir -p /usr/local/lib/docker/cli-plugins
+      BUILDX_VER=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | grep tag_name | cut -d'"' -f4)
+      sudo curl -L "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-amd64" -o /usr/local/lib/docker/cli-plugins/docker-buildx
+      sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
     fi
     sudo service docker start 2>/dev/null || sudo systemctl start docker
     sudo usermod -aG docker "$USER" 2>/dev/null || true

@@ -21,6 +21,8 @@ from .models import (
 from .critic import CriticAgent
 from .researcher import ResearcherAgent
 from .devils_advocate import DevilsAdvocate
+from .sentiment_agent import SentimentAgent
+from .macro_analyst import MacroAnalyst
 from .vector_store import VectorStore
 from .wallet import wallet as wallet_instance
 
@@ -42,6 +44,14 @@ def get_store(settings: Settings = Depends(get_settings)) -> VectorStore:
 
 def get_advocate(settings: Settings = Depends(get_settings)) -> DevilsAdvocate:
     return DevilsAdvocate(settings)
+
+
+def get_sentiment(settings: Settings = Depends(get_settings)) -> SentimentAgent:
+    return SentimentAgent(settings)
+
+
+def get_macro(settings: Settings = Depends(get_settings)) -> MacroAnalyst:
+    return MacroAnalyst(settings)
 
 
 @router.post("/postmortem", response_model=CriticResponse)
@@ -235,3 +245,17 @@ async def wallet_reset(capital: float = 100_000):
 @router.post("/advocate", response_model=dict)
 async def advocate_check(request: dict, advocate: DevilsAdvocate = Depends(get_advocate)):
     return advocate.argue(request)
+
+
+@router.post("/sentiment", response_model=dict)
+async def sentiment_analysis(request: dict, agent: SentimentAgent = Depends(get_sentiment)):
+    return agent.analyze(
+        ticker=request.get("ticker", ""),
+        sector=request.get("sector", "General"),
+        context=request.get("context", ""),
+    )
+
+
+@router.post("/macro", response_model=dict)
+async def macro_analysis(request: dict, agent: MacroAnalyst = Depends(get_macro)):
+    return agent.analyze(context=request.get("context", ""))

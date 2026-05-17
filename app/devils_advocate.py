@@ -3,7 +3,7 @@ import logging
 
 from .config import Settings
 from .models import ResearchRequest
-from .llm.providers import LLMAdapter, create_llm
+from .llm.providers import LLMAdapter, create_llm_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ Reply ONLY with valid JSON. No markdown.
 class DevilsAdvocate:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.llm: LLMAdapter = create_llm(settings)
+        self.llm: LLMAdapter = create_llm_for_agent(settings, "advocate")
 
     def argue(self, trade: dict) -> dict:
         user_prompt = json.dumps(trade, indent=2)

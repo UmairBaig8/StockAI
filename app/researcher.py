@@ -3,7 +3,7 @@ import logging
 
 from .config import Settings
 from .models import ResearchRequest, ResearchResponse, Sentiment
-from .llm.providers import LLMAdapter, create_llm
+from .llm.providers import LLMAdapter, create_llm_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ You must reply ONLY with a valid JSON object. No markdown, no prose outside JSON
 class ResearcherAgent:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.llm: LLMAdapter = create_llm(settings)
+        self.llm: LLMAdapter = create_llm_for_agent(settings, "researcher")
 
     def analyze(self, request: ResearchRequest) -> ResearchResponse:
         user_prompt = json.dumps(

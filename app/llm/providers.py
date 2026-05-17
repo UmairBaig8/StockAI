@@ -204,7 +204,11 @@ class OllamaAdapter(LLMAdapter):
 
 
 def create_llm(settings) -> LLMAdapter:
-    provider = settings.llm_provider
+    return create_llm_for_agent(settings, "default")
+
+
+def create_llm_for_agent(settings, agent: str) -> LLMAdapter:
+    provider = settings.agent_provider(agent)
 
     if provider == LLMProvider.GEMINI:
         return GeminiAdapter(api_key=settings.gemini_api_key, model=settings.gemini_model)

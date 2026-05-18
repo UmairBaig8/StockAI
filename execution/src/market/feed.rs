@@ -1,12 +1,17 @@
 use crate::broker::types::Quote;
 use crate::orderbook::book::OrderBook;
+use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info};
+
+pub type PriceMap = Arc<RwLock<HashMap<String, f64>>>;
 
 pub struct MarketFeed {
     books: HashMap<String, OrderBook>,
     quote_rx: mpsc::Receiver<Quote>,
+    prices: Option<PriceMap>,
 }
 
 impl MarketFeed {
@@ -14,6 +19,15 @@ impl MarketFeed {
         Self {
             books: HashMap::new(),
             quote_rx,
+            prices: None,
+        }
+    }
+
+    pub fn with_prices(quote_rx: mpsc::Receiver<Quote>, prices: PriceMap) -> Self {
+        Self {
+            books: HashMap::new(),
+            quote_rx,
+            prices: Some(prices),
         }
     }
 
@@ -28,6 +42,7 @@ impl MarketFeed {
     }
 
     pub fn apply_quote(&mut self, quote: &Quote) {
+        let prices = self.prices.clone();
         let book = self.get_or_create_book(&quote.ticker);
         book.update_bid(quote.bid, quote.bid_qty);
         book.update_ask(quote.ask, quote.ask_qty);
@@ -38,6 +53,16 @@ impl MarketFeed {
             quote.ask,
             book.spread()
         );
+        // Update shared price map with mid price
+        if let Some(prices) = prices {
+            if let Some(mid) = book.mid_price() {
+                let mid_f64: f64 = mid.to_f64().unwrap_or(0.0);
+                let ticker = quote.ticker.clone();
+                if let Ok(mut map) = prices.try_write() {
+                    map.insert(ticker, mid_f64);
+                }
+            }
+        }
     }
 
     pub async fn run(&mut self) {

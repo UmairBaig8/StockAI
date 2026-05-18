@@ -247,6 +247,17 @@ async def log_trade(trade: DashTrade, store: VectorStore = Depends(get_store)):
     # SEBI audit trail
     store.audit_log("trade", trade.ticker, trade.model_dump())
 
+    # Persist to PostgreSQL
+    try:
+        from . import db
+        await db.log_trade(
+            trade.ticker, trade.dir, trade.qty, trade.entry_price,
+            getattr(trade, 'exit_price', getattr(trade, 'entry_price', 0)),
+            trade.pnl or 0, trade.status, "",
+        )
+    except Exception as e:
+        logger.warning(f"DB trade log skipped: {e}")
+
     notional = trade.entry_price * trade.qty
     try:
         if trade.dir.upper() in ("BUY", "LONG"):
@@ -334,3 +345,13 @@ async def get_news(ticker: str = ""):
 async def refresh_news():
     items = await news_scraper.fetch_all_news()
     return {"count": len(items), "items": items[:5]}
+
+
+# === History (PostgreSQL) ===
+
+@router.get("/history", response_model=dict)
+async def trade_history(ticker: str = "", limit: int = 50):
+    from . import db
+    trades = await db.get_trades(limit=limit, ticker=ticker)
+    summary = await db.get_summary(ticker=ticker)
+    return {"trades": trades, "summary": summary, "ticker": ticker}

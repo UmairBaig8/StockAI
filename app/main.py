@@ -23,6 +23,8 @@ bridge.callbacks.append(strategy.feed_quote)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .wallet import wallet as w
+    await w.load_from_db()
     asyncio.create_task(bridge.start())
     asyncio.create_task(strategy.run())
     asyncio.create_task(start_news_poller(900))  # Poll news every 15 min

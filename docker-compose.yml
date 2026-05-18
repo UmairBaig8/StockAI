@@ -9,6 +9,22 @@ services:
       interval: 5s
       retries: 5
 
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=stockai
+      - POSTGRES_PASSWORD=stockai
+      - POSTGRES_DB=stockai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockai"]
+      interval: 5s
+      retries: 5
+
   memory:
     build:
       context: .
@@ -27,10 +43,13 @@ services:
       - REDIS_ADDR=redis://redis:6379
       - MEMORY_URL=http://memory:8000
       - DOCKER_MODE=1
+      - DATABASE_URL=postgresql://stockai:stockai@postgres:5432/stockai
     volumes:
       - memory_data:/data
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   orchestrator:
@@ -74,3 +93,4 @@ services:
 
 volumes:
   memory_data:
+  pg_data:

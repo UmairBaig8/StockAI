@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
@@ -51,6 +52,7 @@ class Wallet:
             self.positions[ticker] = Position(ticker=ticker, qty=qty, avg_price=price, side=side)
 
         logger.info(f"Position opened: {ticker} {side} qty={qty} @ {price} | available={self.available:,.0f} invested={self.invested:,.0f}")
+        self._save()
 
     def close_position(self, ticker: str, qty: int, price: float):
         if ticker not in self.positions:
@@ -72,6 +74,36 @@ class Wallet:
             del self.positions[ticker]
 
         logger.info(f"Position closed: {ticker} qty={close_qty} @ {price} P&L=₹{pnl:,.2f}")
+        self._save()
+
+    def _save(self):
+        try:
+            from . import db
+            s = self.snapshot()
+            asyncio.ensure_future(db.save_wallet(
+                s["initial_capital"], s["available"], s["invested"],
+                s["realized_pnl"], s["positions"],
+            ))
+        except Exception as e:
+            logger.warning(f"Wallet save skipped: {e}")
+
+    async def load_from_db(self):
+        try:
+            from . import db
+            data = await db.load_wallet()
+            self.initial_capital = data["initial_capital"]
+            self.available = data["available"]
+            self.invested = data["invested"]
+            self.realized_pnl = data["realized_pnl"]
+            self.positions = {}
+            for t, p in data["positions"].items():
+                self.positions[t] = Position(
+                    ticker=p["ticker"], qty=p["qty"],
+                    avg_price=p["avg_price"], side=p["side"],
+                )
+            logger.info(f"Wallet loaded from DB: ₹{self.available:,.0f} available, {len(self.positions)} positions")
+        except Exception as e:
+            logger.warning(f"Wallet load failed: {e}")
 
     def total_equity(self) -> float:
         return self.available + self.invested

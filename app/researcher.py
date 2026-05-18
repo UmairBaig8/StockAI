@@ -39,12 +39,16 @@ class ResearcherAgent:
         self.llm: LLMAdapter = create_llm_for_agent(settings, "researcher")
 
     def analyze(self, request: ResearchRequest) -> ResearchResponse:
+        from . import news_scraper
+        news_context = news_scraper.get_news_context(request.ticker)
+
         user_prompt = json.dumps(
             {
                 "ticker": request.ticker,
                 "sector": request.sector,
                 "exchange": request.exchange,
                 "additional_context": request.context or "No additional context provided.",
+                "recent_news": news_context,
             },
             indent=2,
         )

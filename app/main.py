@@ -10,6 +10,7 @@ from .config import get_settings
 from .market_data import MarketDataBridge
 from .router import router, set_bridge
 from .strategy import StrategyAgent
+from .news_scraper import start_news_poller
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,7 +25,8 @@ bridge.callbacks.append(strategy.feed_quote)
 async def lifespan(app: FastAPI):
     asyncio.create_task(bridge.start())
     asyncio.create_task(strategy.run())
-    logger.info("StockAI Memory Service ready (market + strategy + critic + memory)")
+    asyncio.create_task(start_news_poller(900))  # Poll news every 15 min
+    logger.info("StockAI Memory Service ready (market + strategy + news + critic + memory)")
     yield
     bridge.stop()
     logger.info("StockAI Memory Service shutting down")

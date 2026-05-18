@@ -112,6 +112,14 @@ func main() {
 			}
 		},
 	)
+	sched.Register(
+		"daily-pnl-report",
+		15, 30,
+		func() {
+			log.Println("Generating daily P&L report...")
+			sendDailyReport(tgBot, memoryURL)
+		},
+	)
 	sched.Start()
 	defer sched.Stop()
 
@@ -136,7 +144,7 @@ func main() {
 		log.Printf("Warning: Startup notification failed: %v", err)
 	}
 
-	go signalLoop(ctx, rdb, memoryURL)
+	go signalLoop(ctx, rdb, tgBot, memoryURL)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -147,7 +155,7 @@ func main() {
 	rdb.Close()
 }
 
-func signalLoop(ctx context.Context, rdb *redis.Client, memoryURL string) {
+func signalLoop(ctx context.Context, rdb *redis.Client, tg *telegram.Bot, memoryURL string) {
 	pubsub := rdb.Subscribe(ctx, "trade:result")
 	defer pubsub.Close()
 
@@ -169,14 +177,73 @@ func signalLoop(ctx context.Context, rdb *redis.Client, memoryURL string) {
 			if result.Status == "LOSS" {
 				log.Printf("Loss detected: %s %.2f%% — running postmortem...", result.Ticker, result.PnLPct)
 				runPostMortem(result, memoryURL)
+				tg.SendTradeAlert(result.Ticker, result.Direction, result.EntryPrice, result.ExitPrice, result.Quantity, result.PnLPct, result.Status)
+			} else if result.Status == "WIN" {
+				tg.SendTradeAlert(result.Ticker, result.Direction, result.EntryPrice, result.ExitPrice, result.Quantity, result.PnLPct, result.Status)
 			} else {
-				log.Printf("Trade OK: %s %s @ %.2f", result.Ticker, result.Direction, result.EntryPrice)
+				log.Printf("Trade: %s %s @ %.2f [%s]", result.Ticker, result.Direction, result.EntryPrice, result.Status)
 			}
-			pushTradeToDash(result, memoryURL)
+	pushTradeToDash(result, memoryURL)
 
-		case <-ctx.Done():
-			return
+	resp.Body.Close()
+}
+
+func sendDailyReport(tg *telegram.Bot, memoryURL string) {
+	resp, err := http.Get(memoryURL + "/api/v1/dash")
+	if err != nil {
+		log.Printf("Daily report fetch error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var dash struct {
+		Summary struct {
+			TotalTrades int     `json:"total_trades"`
+			Wins        int     `json:"wins"`
+			Losses      int     `json:"losses"`
+			PnL         float64 `json:"pnl"`
+			PnLPercent  float64 `json:"pnl_percent"`
+		} `json:"summary"`
+		Trades []struct {
+			Ticker string  `json:"ticker"`
+			Pnl    float64 `json:"pnl"`
+		} `json:"trades"`
+		Entries int `json:"entries"`
+	}
+
+	if err := json.Unmarshal(body, &dash); err != nil {
+		log.Printf("Daily report parse error: %v", err)
+		return
+	}
+
+	best := ""
+	worst := ""
+	bestPnl := 0.0
+	worstPnl := 0.0
+	for _, t := range dash.Trades {
+		if t.Pnl > bestPnl {
+			bestPnl = t.Pnl
+			best = t.Ticker
 		}
+		if t.Pnl < worstPnl {
+			worstPnl = t.Pnl
+			worst = t.Ticker
+		}
+	}
+
+	tg.SendDailyReport(
+		dash.Summary.TotalTrades,
+		dash.Summary.Wins,
+		dash.Summary.Losses,
+		dash.Summary.PnL,
+		dash.Summary.PnLPercent,
+		best,
+		worst,
+		dash.Entries,
+	)
+	log.Println("Daily P&L report sent")
+}
 	}
 }
 

@@ -27,6 +27,7 @@ from .vector_store import VectorStore
 from .wallet import wallet as wallet_instance
 from .market_data import MarketDataBridge
 from . import settings_store as settings_store
+from . import news_scraper as news_scraper
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -316,3 +317,20 @@ async def discover_tickers(
     if tickers:
         _add_tickers(tickers)
     return {"tickers": tickers, "added": len(tickers)}
+
+
+# === News ===
+
+@router.get("/news", response_model=dict)
+async def get_news(ticker: str = ""):
+    if ticker:
+        items = news_scraper.get_news_for_ticker(ticker, limit=10)
+    else:
+        items = news_scraper.get_latest_news(limit=20)
+    return {"ticker": ticker, "count": len(items), "items": items}
+
+
+@router.post("/news/refresh", response_model=dict)
+async def refresh_news():
+    items = await news_scraper.fetch_all_news()
+    return {"count": len(items), "items": items[:5]}

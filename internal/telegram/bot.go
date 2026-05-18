@@ -94,7 +94,60 @@ func (b *Bot) SendStatus(status string) error {
 	return b.SendMessage(msg)
 }
 
-func (b *Bot) GetUpdates(offset int) ([]Update, error) {
+func (b *Bot) SendTradeAlert(ticker, direction string, entryPrice, exitPrice float64, qty int, pnlPct float64, status string) {
+	emoji := "🟢"
+	if status == "LOSS" {
+		emoji = "🔴"
+	} else if status == "OPEN" {
+		emoji = "🔵"
+	}
+	pnlSign := "+"
+	if pnlPct < 0 {
+		pnlSign = ""
+	}
+
+	msg := fmt.Sprintf(
+		"%s <b>%s %s</b>\n"+
+			"Qty: %d | Entry: ₹%.2f | Exit: ₹%.2f\n"+
+			"P&L: %s%.2f%% | Status: %s\n"+
+			"<i>StockAI — %s</i>",
+		emoji, ticker, direction,
+		qty, entryPrice, exitPrice,
+		pnlSign, pnlPct, status,
+		time.Now().Format("15:04 IST"),
+	)
+	b.SendMessage(msg)
+}
+
+func (b *Bot) SendDailyReport(totalTrades, wins, losses int, netPnL float64, netPnLPct float64, bestTrade, worstTrade string, rulesLearned int) {
+	winRate := 0.0
+	if totalTrades > 0 {
+		winRate = float64(wins) / float64(totalTrades) * 100
+	}
+	pnlEmoji := "🟢"
+	pnlSign := "+"
+	if netPnL < 0 {
+		pnlEmoji = "🔴"
+		pnlSign = ""
+	}
+
+	msg := fmt.Sprintf(
+		"<b>📊 Daily P&L Report</b>\n\n"+
+			"Trades: %d | Wins: %d | Losses: %d\n"+
+			"Win Rate: %.0f%%\n\n"+
+			"%s <b>Net P&L: %s₹%.2f (%s%.2f%%)</b>\n\n"+
+			"Best: %s | Worst: %s\n"+
+			"Evolution rules: %d\n\n"+
+			"<i>StockAI — %s</i>",
+		totalTrades, wins, losses,
+		winRate,
+		pnlEmoji, pnlSign, netPnL, pnlSign, netPnLPct,
+		bestTrade, worstTrade,
+		rulesLearned,
+		time.Now().Format("02 Jan 2006 15:04 IST"),
+	)
+	b.SendMessage(msg)
+}
 	u, err := url.Parse(b.apiURL("getUpdates"))
 	if err != nil {
 		return nil, fmt.Errorf("parse URL: %w", err)

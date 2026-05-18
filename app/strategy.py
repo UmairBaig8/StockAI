@@ -27,6 +27,7 @@ class StrategyAgent:
         self._last_forced_trade = 0.0
         self._last_discovery_hour = -1
         self._last_discovery_date = ""
+        self._highest_price: dict[str, float] = {}  # trailing stop tracker
         settings_store.on_change(self._on_settings_change)
 
     def _load_config(self, cfg: dict | None = None):
@@ -122,6 +123,8 @@ class StrategyAgent:
                         signal = {"direction": "SELL", "reason": f"Take profit +{pos_change:+.2f}%"}
                     elif pos_change <= -self.stop_loss_pct:
                         signal = {"direction": "SELL", "reason": f"Stop loss {pos_change:+.2f}%"}
+                    elif self._check_trailing_stop(ticker, current, pos.avg_price):
+                        signal = {"direction": "SELL", "reason": f"Trailing stop triggered at {current:.2f}"}
 
                 if not signal:
                     continue
@@ -158,6 +161,8 @@ class StrategyAgent:
 
                 await self._publish_trade(trade)
                 self.last_signal[ticker] = now
+                if signal["direction"] == "SELL":
+                    self._highest_price.pop(ticker, None)  # reset trailing stop tracker
                 logger.info(f"Strategy: {ticker} {signal['direction']} qty={qty} @ {current:.2f} — {signal['reason']}")
 
             # If no natural signal, pick best opportunity across all tickers
@@ -273,6 +278,26 @@ class StrategyAgent:
             return -997  # overbought — don't buy
 
         return score
+
+    def _check_trailing_stop(self, ticker: str, current: float, entry: float) -> bool:
+        """Dynamic trailing stop: locks in profits as price rises."""
+        highest = self._highest_price.get(ticker, entry)
+        if current > highest:
+            highest = current
+            self._highest_price[ticker] = highest
+
+        pnl_pct = ((current - entry) / entry) * 100
+
+        # Once +2% profit, move stop to breakeven
+        if pnl_pct >= 2.0:
+            return current <= entry
+
+        # Once +5% profit, trail stop at current - 3%
+        if pnl_pct >= 5.0:
+            return current <= highest * 0.97
+
+        # Initial stop: -3% from entry
+        return pnl_pct <= -self.stop_loss_pct
 
     def _calc_rsi(self, prices: list[float]) -> float:
         if len(prices) < 2:

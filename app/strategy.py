@@ -70,7 +70,7 @@ class StrategyAgent:
             return
 
         if ticker not in self.price_history:
-            self.price_history[ticker] = deque(maxlen=self.rsi_period * 2)
+            self.price_history[ticker] = deque(maxlen=200)  # ~7 min raw + resample room
 
         self.price_history[ticker].append(float(price))
 
@@ -115,7 +115,13 @@ class StrategyAgent:
 
                 signal = None
                 if open_count < self.max_positions and rsi < self.rsi_oversold and change_pct < -self.min_drop_pct:
-                    signal = {"direction": "BUY", "reason": f"Oversold RSI={rsi:.0f} change={change_pct:+.2f}%"}
+                    # Multi-timeframe confirmation: 1m, 5m, 15m RSI all oversold
+                    if self._confirm_multiframe_rsi(list(prices)):
+                        # MACD bullish crossover check
+                        if self._check_macd_bullish(list(prices)):
+                            signal = {"direction": "BUY", "reason": f"MTF RSI={rsi:.0f} MACD bullish change={change_pct:+.2f}%"}
+                    elif self._check_bb_oversold(list(prices), current):
+                        signal = {"direction": "BUY", "reason": f"BB oversold RSI={rsi:.0f} bounce at {current:.2f}"}
                 elif ticker in wallet_instance.positions:
                     pos = wallet_instance.positions[ticker]
                     pos_change = ((current - pos.avg_price) / pos.avg_price) * 100
@@ -125,6 +131,8 @@ class StrategyAgent:
                         signal = {"direction": "SELL", "reason": f"Stop loss {pos_change:+.2f}%"}
                     elif self._check_trailing_stop(ticker, current, pos.avg_price):
                         signal = {"direction": "SELL", "reason": f"Trailing stop triggered at {current:.2f}"}
+                    elif self._check_bb_overbought(list(prices), current):
+                        signal = {"direction": "SELL", "reason": f"BB overbought at {current:.2f}"}
 
                 if not signal:
                     continue
@@ -278,6 +286,84 @@ class StrategyAgent:
             return -997  # overbought — don't buy
 
         return score
+
+    # ── Multi-Timeframe RSI ──
+
+    def _confirm_multiframe_rsi(self, prices: list[float]) -> bool:
+        """BUY only if 1m, 5m, 15m RSI are all oversold."""
+        n = len(prices)
+        if n < 30:
+            return False
+        # 1m: last 14 raw points (~28s)
+        rsi_1m = self._calc_rsi(prices[-14:])
+        # 5m: sample every 5th point (~2.5 min window)
+        m5 = prices[-int(min(14*5, n))::5]
+        rsi_5m = self._calc_rsi(m5) if len(m5) >= 5 else 50
+        # 15m: sample every 15th point (~7.5 min window)
+        m15 = prices[-int(min(14*15, n))::15]
+        rsi_15m = self._calc_rsi(m15) if len(m15) >= 5 else 50
+        return rsi_1m < self.rsi_oversold and rsi_5m < self.rsi_oversold and rsi_15m < self.rsi_oversold
+
+    # ── MACD ──
+
+    def _ema(self, prices: list[float], period: int) -> float:
+        if len(prices) < period:
+            return prices[-1] if prices else 0
+        multiplier = 2.0 / (period + 1)
+        ema = sum(prices[:period]) / period
+        for p in prices[period:]:
+            ema = (p - ema) * multiplier + ema
+        return ema
+
+    def _calc_macd(self, prices: list[float]) -> tuple[float, float, float]:
+        """Returns (macd_line, signal_line, histogram)."""
+        if len(prices) < 26:
+            return 0, 0, 0
+        ema12 = self._ema(prices, 12)
+        ema26 = self._ema(prices, 26)
+        macd_line = ema12 - ema26
+        # Signal: 9-period EMA of recent MACD approximations
+        signal = macd_line * 0.9  # simplified for real-time
+        hist = macd_line - signal
+        return macd_line, signal, hist
+
+    def _check_macd_bullish(self, prices: list[float]) -> bool:
+        """MACD histogram turning positive or above signal."""
+        _, _, hist = self._calc_macd(prices)
+        if len(prices) < 30:
+            return hist > 0
+        # Check if histogram was negative and is now rising
+        _, _, prev_hist = self._calc_macd(prices[:-1])
+        return hist > prev_hist or hist > 0
+
+    # ── Bollinger Bands ──
+
+    def _calc_bb(self, prices: list[float], period: int = 20, std_mult: float = 2.0) -> tuple[float, float, float]:
+        """Returns (lower, middle, upper)."""
+        if len(prices) < period:
+            return 0, 0, 0
+        window = prices[-period:]
+        sma = sum(window) / period
+        variance = sum((p - sma) ** 2 for p in window) / period
+        std = variance ** 0.5
+        return sma - std_mult * std, sma, sma + std_mult * std
+
+    def _check_bb_oversold(self, prices: list[float], current: float) -> bool:
+        """Price at or below lower Bollinger Band = oversold bounce opportunity."""
+        lower, mid, upper = self._calc_bb(prices)
+        if lower <= 0:
+            return False
+        # Price near or below lower band
+        return current <= lower * 1.005 and len(prices) >= 20
+
+    def _check_bb_overbought(self, prices: list[float], current: float) -> bool:
+        """Price at or above upper Bollinger Band = overbought signal."""
+        lower, mid, upper = self._calc_bb(prices)
+        if upper <= 0:
+            return False
+        return current >= upper * 0.995 and len(prices) >= 20
+
+    # ── Trailing Stop ──
 
     def _check_trailing_stop(self, ticker: str, current: float, entry: float) -> bool:
         """Dynamic trailing stop: locks in profits as price rises."""

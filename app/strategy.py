@@ -204,7 +204,7 @@ class StrategyAgent:
                     best_score, best_ticker = score, ticker
                     best_price = prices[-1]
 
-            if best_ticker and best_price > 0:
+            if best_ticker and best_price > 0 and best_score > -500:
                 notional = wallet_instance.available * (self.max_position_pct / 100)
                 qty = max(1, int(notional / best_price))
                 rsi = self._calc_rsi(list(self.price_history[best_ticker]))
@@ -216,7 +216,7 @@ class StrategyAgent:
                 })
                 self._last_forced_trade = now
                 logger.info(f"Strategy: {best_ticker} BUY (best pick) qty={qty} @ {best_price:.2f} — {reason}")
-        else:
+        elif self._is_market_open():
             # Max positions — sell the weakest held position
             worst_score, worst_ticker, worst_price = 999, None, 0.0
             for ticker in wallet_instance.positions:

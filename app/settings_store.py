@@ -24,6 +24,17 @@ DEFAULTS: dict[str, Any] = {
     "initial_capital": float(os.getenv("STRATEGY_INITIAL_CAPITAL", "100000")),
     "llm_provider": os.getenv("MEMORY_LLM_PROVIDER", "deepseek"),
     "llm_model": os.getenv("MEMORY_DEEPSEEK_MODEL", "deepseek-chat"),
+    # Per-agent LLM overrides
+    "llm_critic_provider": os.getenv("MEMORY_CRITIC_LLM_PROVIDER", ""),
+    "llm_critic_model": os.getenv("MEMORY_CRITIC_LLM_MODEL", ""),
+    "llm_researcher_provider": os.getenv("MEMORY_RESEARCHER_LLM_PROVIDER", ""),
+    "llm_researcher_model": os.getenv("MEMORY_RESEARCHER_LLM_MODEL", ""),
+    "llm_advocate_provider": os.getenv("MEMORY_ADVOCATE_LLM_PROVIDER", ""),
+    "llm_advocate_model": os.getenv("MEMORY_ADVOCATE_LLM_MODEL", ""),
+    "llm_sentiment_provider": os.getenv("MEMORY_SENTIMENT_LLM_PROVIDER", ""),
+    "llm_sentiment_model": os.getenv("MEMORY_SENTIMENT_LLM_MODEL", ""),
+    "llm_macro_provider": os.getenv("MEMORY_MACRO_LLM_PROVIDER", ""),
+    "llm_macro_model": os.getenv("MEMORY_MACRO_LLM_MODEL", ""),
 }
 
 _callbacks: list = []

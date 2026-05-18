@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/base.css">
 <title>StockAI — Settings</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -141,6 +142,62 @@
           <label for="llm_model">Model</label>
           <input type="text" id="llm_model" name="llm_model" placeholder="deepseek-chat">
           <p class="help">Model name for selected provider.</p>
+        </div>
+      </div>
+    </form>
+
+    <!-- Per-Agent LLM Overrides -->
+    <h2 id="agent-llm-heading">Per-Agent LLM (optional — uses default if empty)</h2>
+    <form aria-labelledby="agent-llm-heading">
+      <p class="help" style="margin-bottom:12px">Leave blank to use the default provider above. Each agent can use a different LLM for cost optimization.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="llm_critic_provider">Critic (post-mortem)</label>
+          <select id="llm_critic_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select>
+        </div>
+        <div class="form-group">
+          <label for="llm_critic_model">Model</label>
+          <input type="text" id="llm_critic_model" placeholder="gpt-4o-mini">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="llm_researcher_provider">Researcher</label>
+          <select id="llm_researcher_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select>
+        </div>
+        <div class="form-group">
+          <label for="llm_researcher_model">Model</label>
+          <input type="text" id="llm_researcher_model" placeholder="gemini-2.5-flash">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="llm_advocate_provider">Devil's Advocate</label>
+          <select id="llm_advocate_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select>
+        </div>
+        <div class="form-group">
+          <label for="llm_advocate_model">Model</label>
+          <input type="text" id="llm_advocate_model" placeholder="deepseek-chat">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="llm_sentiment_provider">Sentiment</label>
+          <select id="llm_sentiment_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select>
+        </div>
+        <div class="form-group">
+          <label for="llm_sentiment_model">Model</label>
+          <input type="text" id="llm_sentiment_model" placeholder="gemini-2.5-flash">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="llm_macro_provider">Macro Analyst</label>
+          <select id="llm_macro_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select>
+        </div>
+        <div class="form-group">
+          <label for="llm_macro_model">Model</label>
+          <input type="text" id="llm_macro_model" placeholder="gemini-2.5-flash">
         </div>
       </div>
     </form>

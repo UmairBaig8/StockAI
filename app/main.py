@@ -95,6 +95,11 @@ def create_app() -> FastAPI:
     async def backtest_page():
         return (Path(__file__).parent / "templates" / "backtest.html").read_text()
 
+    @app.get("/base.css", response_class=Response)
+    async def base_css():
+        css = (Path(__file__).parent / "templates" / "base.css").read_text()
+        return Response(content=css, media_type="text/css")
+
     @app.get("/favicon.ico")
     async def favicon():
         svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="#0b0b10"/><text x="16" y="22" text-anchor="middle" fill="#00ff88" font-family="monospace" font-size="18" font-weight="bold">S</text></svg>'

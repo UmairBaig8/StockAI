@@ -8,13 +8,14 @@ from contextlib import asynccontextmanager
 
 from .config import get_settings
 from .market_data import MarketDataBridge
-from .router import router
+from .router import router, set_bridge
 from .strategy import StrategyAgent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 bridge = MarketDataBridge()
+set_bridge(bridge)
 strategy = StrategyAgent()
 bridge.callbacks.append(strategy.feed_quote)
 

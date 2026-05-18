@@ -166,15 +166,24 @@ async fn signal_loop(
             Ok(order) => {
                 info!("Order placed: {} ({})", order.id, signal.ticker);
 
+                // Simple paper P&L: vary exit price within ±2% of entry based on ticker+price hash
+                let seed = signal.ticker.as_bytes().iter().fold(0u64, |a, &b| a.wrapping_mul(31).wrapping_add(b as u64))
+                    .wrapping_add(signal.price as u64);
+                let variation = ((seed % 41) as f64 - 20.0) / 1000.0; // -2% to +2%
+                let exit_mult = if signal.direction == "BUY" { 1.0 + variation } else { 1.0 - variation };
+                let exit_price = signal.price * exit_mult;
+                let pnl = if signal.direction == "BUY" { variation * 100.0 } else { -variation * 100.0 };
+                let status = if pnl >= 0.0 { "WIN" } else { "LOSS" };
+
                 let result = TradeResult {
                     order_id: order.id.clone(),
                     ticker: signal.ticker.clone(),
                     direction: signal.direction.clone(),
                     entry_price: signal.price,
-                    exit_price: signal.price * 0.98,
+                    exit_price: (exit_price * 100.0).round() / 100.0,
                     quantity: signal.quantity,
-                    pnl_percent: if signal.direction == "BUY" { -1.8 } else { 0.5 },
-                    status: if signal.direction == "BUY" { "LOSS".into() } else { "WIN".into() },
+                    pnl_percent: (pnl * 100.0).round() / 100.0,
+                    status: status.to_string(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
 

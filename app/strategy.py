@@ -151,6 +151,10 @@ class StrategyAgent:
 
     async def _check_memory(self, ticker: str, rsi: float) -> bool:
         try:
+            prices = list(self.price_history.get(ticker, []))
+            n = len(prices)
+            price_velocity = ((prices[-1] - prices[-min(5, n)]) / prices[-min(5, n)] * 100) if n >= 5 else 0
+            trend_profile = ((prices[-1] - prices[0]) / prices[0] * 100) if n >= 2 else 0
             async with httpx.AsyncClient(timeout=10) as c:
                 r = await c.post(
                     f"{self.memory_url}/api/v1/pretrade",
@@ -161,8 +165,8 @@ class StrategyAgent:
                             "macd_histogram": 0,
                             "volume_z_score": 0,
                             "sector_trend": 0,
-                            "price_velocity_5m": 0,
-                            "trend_profile_1h": 0,
+                            "price_velocity_5m": round(price_velocity, 2),
+                            "trend_profile_1h": round(trend_profile, 2),
                         },
                     },
                 )
@@ -175,7 +179,8 @@ class StrategyAgent:
         try:
             import redis.asyncio as redis
             t = trade.copy()
-            t["timestamp"] = "2026-05-18T10:00:00+05:30"
+            import datetime
+            t["timestamp"] = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).isoformat()
             r = redis.Redis.from_url(self.redis_url)
             await r.publish("trade:signal", json.dumps(t))
             await r.aclose()

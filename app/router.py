@@ -25,9 +25,21 @@ from .sentiment_agent import SentimentAgent
 from .macro_analyst import MacroAnalyst
 from .vector_store import VectorStore
 from .wallet import wallet as wallet_instance
+from .market_data import MarketDataBridge
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_bridge: MarketDataBridge | None = None
+
+
+def set_bridge(bridge: MarketDataBridge):
+    global _bridge
+    _bridge = bridge
+
+
+def get_bridge() -> MarketDataBridge | None:
+    return _bridge
 
 
 def get_critic(settings: Settings = Depends(get_settings)) -> CriticAgent:
@@ -202,6 +214,17 @@ async def services_status(settings: Settings = Depends(get_settings)):
     except Exception:
         pass
     return status
+
+
+@router.get("/quote/{ticker}", response_model=dict)
+async def quote(ticker: str):
+    bridge = get_bridge()
+    if bridge is None:
+        raise HTTPException(status_code=503, detail="Market data bridge not ready")
+    q = bridge.get_latest(ticker.upper())
+    if q is None:
+        raise HTTPException(status_code=404, detail=f"No data for {ticker}")
+    return q["data"]
 
 
 @router.get("/health", response_model=HealthResponse)

@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -176,6 +179,55 @@ func signalLoop(ctx context.Context, rdb *redis.Client, memoryURL string) {
 	}
 }
 
+func fetchMarketState(ticker string, memoryURL string) map[string]float64 {
+	resp, err := http.Get(fmt.Sprintf("%s/api/v1/quote/%s", memoryURL, ticker))
+	if err != nil {
+		log.Printf("Quote fetch failed for %s: %v", ticker, err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var quote struct {
+		LastPrice float64 `json:"last_price"`
+		Bid       float64 `json:"bid"`
+		Ask       float64 `json:"ask"`
+		Volume    float64 `json:"volume"`
+		Trend     string  `json:"trend"`
+	}
+	if err := json.Unmarshal(body, &quote); err != nil {
+		return nil
+	}
+
+	mid := (quote.Bid + quote.Ask) / 2
+	spread := math.Abs(quote.Ask-quote.Bid) / mid
+
+	trendVal := 0.0
+	if quote.Trend == "up" {
+		trendVal = 0.3
+	} else {
+		trendVal = -0.3
+	}
+
+	volScore := 0.0
+	if quote.Volume > 0 {
+		volScore = math.Min(math.Log10(quote.Volume)/7.0, 1.0)
+	}
+
+	return map[string]float64{
+		"rsi":               50.0,
+		"macd_histogram":    spread * 100,
+		"volume_z_score":    volScore,
+		"sector_trend":      trendVal,
+		"price_velocity_5m": spread * 10,
+		"trend_profile_1h":  trendVal,
+	}
+}
+
 func runPostMortem(result TradeResult, memoryURL string) {
 	dir := result.Direction
 	if dir == "BUY" {
@@ -184,15 +236,16 @@ func runPostMortem(result TradeResult, memoryURL string) {
 		dir = "SHORT"
 	}
 
+	marketState := fetchMarketState(result.Ticker, memoryURL)
+	if marketState == nil {
+		marketState = map[string]float64{
+			"rsi": 50, "macd_histogram": 0, "volume_z_score": 0,
+			"sector_trend": 0, "price_velocity_5m": 0, "trend_profile_1h": 0,
+		}
+	}
+
 	payload := map[string]any{
-		"market_state": map[string]float64{
-			"rsi":               70,
-			"macd_histogram":    0.5,
-			"volume_z_score":    0.8,
-			"sector_trend":      0.3,
-			"price_velocity_5m": 0.1,
-			"trend_profile_1h":  0.2,
-		},
+		"market_state":    marketState,
 		"trade_execution": map[string]any{
 			"ticker":      result.Ticker,
 			"exchange":    "NSE",

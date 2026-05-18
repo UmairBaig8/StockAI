@@ -73,6 +73,10 @@ class BacktestEngine:
         closes = df["Close"].values.tolist()
         timestamps = df.index.tolist()
 
+        # Flatten: yfinance returns nested arrays for multi-ticker
+        if closes and isinstance(closes[0], (list, tuple)):
+            closes = [c[0] if isinstance(c, (list, tuple)) else c for c in closes]
+
         positions: dict[str, BTPosition] = {}
         trades: list[BTTrade] = []
         wallet = self.capital
@@ -83,12 +87,10 @@ class BacktestEngine:
         drawdown_peak = wallet
 
         for i in range(30, len(closes)):
-            current = float(closes[i])
+            current = float(closes[i]) if not (isinstance(closes[i], float) and np.isnan(closes[i])) else 0.0
+            if current <= 0:
+                continue
             ts = timestamps[i]
-            if hasattr(ts, 'to_pydatetime'):
-                ts = ts.to_pydatetime()
-            elif not isinstance(ts, datetime):
-                ts = datetime.now()
 
             price_history.append(current)
             prices = list(price_history)

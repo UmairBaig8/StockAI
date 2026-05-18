@@ -161,12 +161,14 @@
       </header>
 
       <div class="grid">
-        <!-- News Ticker -->
-        <div class="card wide" style="padding:8px 12px">
-          <div class="strip" id="news-strip" style="background:transparent;border:none;padding:0;margin:0">
-            <span style="color:var(--muted)">📰</span>
-            <span class="ticker-scroll" id="news-ticker">Loading news...</span>
-            <a href="#" onclick="event.preventDefault();fetchNews()">Refresh</a>
+        <!-- News -->
+        <div class="card wide" style="padding:10px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <h2 style="margin:0">Market News</h2>
+            <button onclick="fetchNews()" style="font-size:0.55rem;padding:2px 8px;background:var(--input-bg);color:var(--muted);border:1px solid var(--border);border-radius:3px;cursor:pointer">Refresh</button>
+          </div>
+          <div id="news-items" style="font-size:0.65rem;line-height:1.5;max-height:90px;overflow-y:auto">
+            <span style="color:var(--muted)">Loading news...</span>
           </div>
         </div>
 
@@ -353,18 +355,24 @@ async function pollDash(){
 setInterval(pollDash, 2000);
 pollDash();
 
-// ── News Ticker ──
+// ── News ──
 async function fetchNews(){
     try{
         const r = await fetch('/api/v1/news');
         const d = await r.json();
         if(d.items?.length){
-            const lines = d.items.slice(0,8).map(i => i.title).join('  ·  ');
-            $('news-ticker').textContent = lines;
+            const items = d.items.slice(0,5);
+            $('news-items').innerHTML = items.map(i => {
+                const tickers = (i.tickers||[]).slice(0,3).map(t => `<span style="color:var(--accent);font-size:0.55rem">$${t}</span>`).join(' ');
+                const title = i.title.length > 90 ? i.title.slice(0,87)+'...' : i.title;
+                const src = i.link ? `<a href="${i.link}" target="_blank" rel="noopener" style="font-size:0.5rem;color:var(--muted)">source</a>` : '';
+                return `<div style="padding:2px 0;border-bottom:1px solid #15151f">${tickers} ${title} ${src}</div>`;
+            }).join('');
+            if(d.items.length > 5) $('news-items').innerHTML += `<div style="color:var(--muted);font-size:0.55rem">+${d.items.length-5} more items</div>`;
         }
     }catch(e){}
 }
-setInterval(fetchNews, 60000);
+setInterval(fetchNews, 90000);
 fetchNews();
 
 // ── Options PCR ──

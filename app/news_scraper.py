@@ -20,20 +20,53 @@ RSS_FEEDS = [
 NSE_TICKER_PATTERN = re.compile(r'\b([A-Z]{2,20})\b')
 COMMON_WORDS = {"THE", "AND", "FOR", "LTD", "NSE", "BSE", "IPO", "Q1", "Q2", "Q3", "Q4",
                 "FY24", "FY25", "FY26", "RSI", "NIFTY", "SENSEX", "INDIA", "STOCK", "STOCKS",
-                "MARKET", "NEWS", "RUPEE", "DOLLAR", "BANK", "RBI", "SEBI", "GST", "CEO", "CFO"}
+                "MARKET", "NEWS", "RUPEE", "DOLLAR", "BANK", "RBI", "SEBI", "GST", "CEO", "CFO",
+                "PRUDENTIAL", "LIFE", "INSURANCE", "CONSUMER", "PREVIEW", "PROFIT", "REVENUE",
+                "DECLINE", "SURGES", "FALLS", "DIVIDEND"}
+
+# Known NSE tickers (from NIFTY 50 + common)
+KNOWN_TICKERS = {
+    "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "BHARTIARTL", "ITC",
+    "HINDUNILVR", "MARUTI", "TATAMOTORS", "SUNPHARMA", "AXISBANK", "KOTAKBANK", "LT",
+    "TITAN", "BAJFINANCE", "ASIANPAINT", "HCLTECH", "WIPRO", "NESTLE", "ULTRACEMCO",
+    "POWERGRID", "NTPC", "ONGC", "COALINDIA", "ADANIPORTS", "ADANIENT", "HDFC",
+    "TATASTEEL", "JSWSTEEL", "TECHM", "DIVISLAB", "CIPLA", "DRREDDY", "APOLLOHOSP",
+    "GRASIM", "EICHERMOT", "BAJAJFINSV", "HEROMOTOCO", "TATACONSUM", "INDUSINDBK",
+    "BRITANNIA", "HINDALCO", "BAJAJHLDNG", "BAJFINANCE", "MUTHOOTFIN",
+    "BEL", "HAL", "TATAPOWER", "TATAELXSI", "CYIENT", "LTIM", "MINDTREE",
+}
+
+# Ticker-to-company name map
+TICKER_COMPANY = {
+    "RELIANCE": "Reliance Industries", "TCS": "Tata Consultancy", "INFY": "Infosys",
+    "HDFCBANK": "HDFC Bank", "ICICIBANK": "ICICI Bank", "SBIN": "SBI",
+    "BHARTIARTL": "Bharti Airtel", "ITC": "ITC Ltd", "HINDUNILVR": "Hindustan Unilever",
+    "MARUTI": "Maruti Suzuki", "TATAMOTORS": "Tata Motors", "TITAN": "Titan Company",
+    "LT": "Larsen & Toubro", "WIPRO": "Wipro", "HCLTECH": "HCL Technologies",
+    "BEL": "Bharat Electronics", "HAL": "Hindustan Aeronautics", "TATAPOWER": "Tata Power",
+    "TATAELXSI": "Tata Elxsi", "CYIENT": "Cyient", "LTIM": "LTIMindtree",
+    "TATACONSUM": "Tata Consumer", "POWERGRID": "Power Grid", "NTPC": "NTPC",
+    "TATASTEEL": "Tata Steel", "ADANIPORTS": "Adani Ports", "ADANIENT": "Adani Enterprises",
+}
 
 _latest_news: list[dict] = []
 _last_fetch = datetime(2000, 1, 1, tzinfo=IST)
 
 
 def _extract_tickers(text: str) -> list[str]:
-    """Extract potential NSE ticker names from text."""
+    """Extract known NSE ticker names from text."""
     tickers = set()
-    for match in NSE_TICKER_PATTERN.finditer(text.upper()):
-        word = match.group(1)
-        if word not in COMMON_WORDS and len(word) >= 3:
-            tickers.add(word)
-    return list(tickers)[:5]
+    upper = text.upper()
+    for t in KNOWN_TICKERS:
+        if t in upper:
+            # Check word boundary to avoid partial matches
+            idx = upper.find(t)
+            if idx >= 0:
+                before = upper[idx-1] if idx > 0 else ' '
+                after = upper[idx+len(t)] if idx+len(t) < len(upper) else ' '
+                if not before.isalpha() and not after.isalpha():
+                    tickers.add(t)
+    return sorted(tickers)[:5]
 
 
 async def _fetch_feed(url: str) -> list[dict]:

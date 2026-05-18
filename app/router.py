@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -393,3 +393,55 @@ async def run_backtest(request: dict):
     result = await asyncio.to_thread(engine.run, tickers, period, interval)
     result["params"] = {"tickers": tickers, "period": period, "interval": interval}
     return result
+
+
+# === Options Flow ===
+
+@router.get("/options/{ticker}", response_model=dict)
+async def option_sentiment(ticker: str):
+    from .options_flow import get_option_sentiment, get_market_pcr
+    sentiment = get_option_sentiment(ticker.upper())
+    pcr = get_market_pcr()
+    sentiment["market_pcr"] = pcr
+    return sentiment
+
+
+@router.post("/options/scan", response_model=dict)
+async def scan_options(request: dict):
+    from .options_flow import scan_ticker_options
+    tickers = request.get("tickers", "RELIANCE.NS,TCS.NS")
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+    results = {}
+    for t in ticker_list:
+        r = await scan_ticker_options(t)
+        if r:
+            results[t] = r
+    return {"scanned": len(results), "results": results}
+
+
+# === AI Optimizer ===
+
+@router.post("/optimize", response_model=dict)
+async def optimize_strategy(
+    request: dict,
+    settings: Settings = Depends(get_settings),
+):
+    from .optimizer import OptimizerAgent
+    from .db import get_trades
+    from .settings_store import current as get_config
+
+    days = request.get("days", 7)
+    trades = await get_trades(limit=500)
+    # Filter last N days
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    recent = [t for t in trades if t.get("time") and t["time"] > cutoff.isoformat()]
+
+    current_params = get_config()
+    agent = OptimizerAgent(settings)
+    result = await agent.analyze_week(recent, current_params)
+
+    return {
+        "trades_analyzed": len(recent),
+        "period_days": days,
+        "optimization": result,
+    }

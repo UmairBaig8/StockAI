@@ -11,6 +11,7 @@ from .market_data import MarketDataBridge
 from .router import router, set_bridge
 from .strategy import StrategyAgent
 from .news_scraper import start_news_poller
+from .options_flow import options_poller
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ async def lifespan(app: FastAPI):
     await w.load_from_db()
     asyncio.create_task(bridge.start())
     asyncio.create_task(strategy.run())
-    asyncio.create_task(start_news_poller(900))  # Poll news every 15 min
+    asyncio.create_task(start_news_poller(900))
+    asyncio.create_task(options_poller(1800))  # Options every 30 min
     logger.info("StockAI Memory Service ready (market + strategy + news + critic + memory)")
     yield
     bridge.stop()

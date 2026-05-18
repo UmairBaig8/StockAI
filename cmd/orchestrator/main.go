@@ -247,8 +247,6 @@ func sendDailyReport(tg *telegram.Bot, memoryURL string) {
 	)
 	log.Println("Daily P&L report sent")
 }
-	}
-}
 
 func fetchMarketState(ticker string, memoryURL string) map[string]float64 {
 	resp, err := http.Get(fmt.Sprintf("%s/api/v1/quote/%s", memoryURL, ticker))

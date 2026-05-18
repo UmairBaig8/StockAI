@@ -14,8 +14,9 @@ class Position:
     side: str  # LONG or SHORT
 
 
-    def _default_capital() -> float:
-        return float(os.getenv("STRATEGY_INITIAL_CAPITAL", "100000"))
+def _default_capital() -> float:
+    return float(os.getenv("STRATEGY_INITIAL_CAPITAL", "100000"))
+
 
 @dataclass
 class Wallet:

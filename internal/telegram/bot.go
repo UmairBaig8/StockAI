@@ -148,6 +148,8 @@ func (b *Bot) SendDailyReport(totalTrades, wins, losses int, netPnL float64, net
 	)
 	b.SendMessage(msg)
 }
+
+func (b *Bot) GetUpdates(offset int) ([]Update, error) {
 	u, err := url.Parse(b.apiURL("getUpdates"))
 	if err != nil {
 		return nil, fmt.Errorf("parse URL: %w", err)

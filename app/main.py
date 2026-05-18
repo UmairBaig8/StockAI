@@ -5,6 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, Response, JSONResponse
 from pathlib import Path
 from contextlib import asynccontextmanager
+import time
 
 from .config import get_settings
 from .market_data import MarketDataBridge
@@ -48,6 +49,26 @@ def create_app() -> FastAPI:
 
     app.include_router(router, prefix="/api/v1")
 
+    # SEBI audit: log every API action
+    @app.middleware("http")
+    async def audit_middleware(request: Request, call_next):
+        start = time.time()
+        response = await call_next(request)
+        duration = time.time() - start
+        if request.url.path.startswith("/api/") and request.method in ("POST", "PUT", "DELETE"):
+            try:
+                from .vector_store import vector_store
+                body = await request.body()
+                payload = body.decode()[:500] if body else ""
+                vector_store.audit_log(
+                    f"api_{request.method.lower()}",
+                    request.url.path.split("/")[-1][:20],
+                    {"path": request.url.path, "method": request.method, "status": response.status_code, "duration_ms": round(duration*1000)},
+                )
+            except Exception:
+                pass
+        return response
+
     @app.get("/", response_class=HTMLResponse)
     async def dashboard():
         dash_path = Path(__file__).parent / "templates" / "dashboard.html"
@@ -57,6 +78,22 @@ def create_app() -> FastAPI:
     async def settings_page():
         settings_path = Path(__file__).parent / "templates" / "settings.html"
         return settings_path.read_text()
+
+    @app.get("/news", response_class=HTMLResponse)
+    async def news_page():
+        return (Path(__file__).parent / "templates" / "news.html").read_text()
+
+    @app.get("/research", response_class=HTMLResponse)
+    async def research_page():
+        return (Path(__file__).parent / "templates" / "research.html").read_text()
+
+    @app.get("/history", response_class=HTMLResponse)
+    async def history_page():
+        return (Path(__file__).parent / "templates" / "history.html").read_text()
+
+    @app.get("/backtest", response_class=HTMLResponse)
+    async def backtest_page():
+        return (Path(__file__).parent / "templates" / "backtest.html").read_text()
 
     @app.get("/favicon.ico")
     async def favicon():

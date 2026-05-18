@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockAI — Trade History</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{--bg:#0b0b10;--surface:#12121a;--border:#1e1e2e;--muted:#666;--fg:#c0c0c0;--accent:#00ff88;--err:#ff4444;--radius:8px;--focus:#3b82f6}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',monospace;background:var(--bg);color:var(--fg);line-height:1.5;min-height:100vh}
+  a{color:var(--accent);text-decoration:none}a:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .skip-link{position:absolute;top:-100px;left:0;background:var(--accent);color:#000;padding:8px 16px;z-index:999}.skip-link:focus{top:0}
+  .layout{display:grid;grid-template-columns:180px 1fr;min-height:100vh}
+  .sidebar{background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh;overflow-y:auto}
+  .sidebar a,.sidebar span{display:flex;align-items:center;padding:8px 10px;border-radius:var(--radius);color:var(--muted);font-size:0.8rem;min-height:40px}
+  .sidebar a:hover,.sidebar a.active{background:var(--bg);color:var(--fg)}
+  .sidebar .brand{font-weight:700;color:var(--accent);font-size:0.95rem;margin-bottom:8px;padding:8px 10px}
+  .main{padding:20px 24px;max-width:1000px}
+  .mobile-nav{display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 10px;gap:6px}
+  .mobile-nav a{color:var(--muted);font-size:0.75rem;padding:6px 10px;border-radius:var(--radius);min-height:36px;display:inline-flex;align-items:center}
+  .mobile-nav a.active{background:var(--bg);color:var(--fg)}
+  @media(max-width:768px){.layout{grid-template-columns:1fr}.sidebar{display:none}.mobile-nav{display:flex}.main{padding:10px}}
+  h1{font-size:1.1rem;margin-bottom:8px}h1 span{color:var(--muted);font-weight:400}
+  .controls{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+  input,select{background:var(--surface);border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:var(--radius);font-size:0.75rem}
+  table{width:100%;font-size:0.7rem;border-collapse:collapse}
+  th{text-align:left;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--border);font-weight:500}
+  td{padding:4px 8px;border-bottom:1px solid #15151f}
+  .summary{display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .stat{flex:1;min-width:100px;text-align:center;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+  .stat .val{font-size:1rem;font-weight:600}.stat .lbl{font-size:0.55rem;color:var(--muted)}
+  .val.green{color:var(--accent)}.val.red{color:var(--err)}
+  .export-btn{font-size:0.65rem;padding:4px 8px;background:var(--surface);color:var(--muted);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer}
+</style>
+</head>
+<body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<div class="layout">
+  <nav class="sidebar">
+    <span class="brand">StockAI</span>
+    <a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a>
+    <a href="/backtest">Backtest</a><a href="/history" class="active" aria-current="page">History</a><a href="/settings">Settings</a>
+  </nav>
+  <div>
+    <nav class="mobile-nav"><a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a><a href="/history" class="active">History</a><a href="/settings">Settings</a></nav>
+    <main class="main" id="main-content">
+      <h1>Trade History <span>persisted in PostgreSQL</span></h1>
+      <div class="controls">
+        <input type="text" id="filter-ticker" placeholder="Filter ticker..." oninput="loadHistory()" aria-label="Filter by ticker">
+        <select id="filter-limit" onchange="loadHistory()"><option value="50">50</option><option value="100">100</option><option value="500">500</option></select>
+        <button class="export-btn" onclick="exportCSV()">Export CSV</button>
+        <span id="status" style="font-size:0.65rem;color:var(--muted)"></span>
+      </div>
+      <div id="summary-row" class="summary"></div>
+      <div style="overflow-x:auto">
+        <table><thead><tr><th>Time</th><th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L %</th><th>Status</th></tr></thead>
+        <tbody id="history-body"><tr><td colspan="8" style="color:var(--muted)">Loading...</td></tr></tbody></table>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+let historyData=[];
+async function loadHistory(){
+  const ticker=document.getElementById('filter-ticker').value.toUpperCase();
+  const limit=document.getElementById('filter-limit').value;
+  try{const r=await fetch('/api/v1/history?ticker='+ticker+'&limit='+limit);const d=await r.json();
+    historyData=d.trades||[];
+    renderSummary(d.summary);renderTrades(historyData);
+    document.getElementById('status').textContent=historyData.length+' trades loaded';
+  }catch(e){document.getElementById('status').textContent='Error: '+e.message}
+}
+function renderSummary(s){
+  if(!s)return;
+  document.getElementById('summary-row').innerHTML=`
+    <div class="stat"><span class="val">${s.total_trades||0}</span><span class="lbl">Trades</span></div>
+    <div class="stat"><span class="val green">${s.wins||0}</span><span class="lbl">Wins</span></div>
+    <div class="stat"><span class="val red">${s.losses||0}</span><span class="lbl">Losses</span></div>
+    <div class="stat"><span class="val">${(s.win_rate||0).toFixed(0)}%</span><span class="lbl">Win Rate</span></div>
+    <div class="stat"><span class="val ${(s.pnl||0)>=0?'green':'red'}">₹${Math.abs(s.pnl||0).toFixed(0)}</span><span class="lbl">P&L</span></div>`;
+}
+function renderTrades(trades){
+  const t=document.getElementById('history-body');
+  if(!trades.length){t.innerHTML='<tr><td colspan="8" style="color:var(--muted)">No trades found</td></tr>';return}
+  t.innerHTML=trades.map(tr=>`<tr><td>${(tr.time||'').slice(0,19)}</td><td>${tr.ticker}</td><td>${tr.dir}</td><td>${tr.qty}</td><td>₹${(tr.entry_price||0).toFixed(0)}</td><td>₹${(tr.exit_price||tr.entry_price||0).toFixed(0)}</td><td style="color:${(tr.pnl||0)>0?'var(--accent)':'var(--err)'}">${(tr.pnl>0?'+':'')+(tr.pnl||0).toFixed(2)}%</td><td>${tr.status}</td></tr>`).join('');
+}
+function exportCSV(){
+  if(!historyData.length)return alert('No data');
+  const csv='Time,Ticker,Direction,Qty,Entry,Exit,PnL%,Status\n'+historyData.map(t=>[t.time,t.ticker,t.dir,t.qty,t.entry_price,t.exit_price||t.entry_price,t.pnl,t.status].join(',')).join('\n');
+  const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='stockai_trades_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+}
+loadHistory();
+</script>
+</body>
+</html>

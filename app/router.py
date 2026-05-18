@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 
@@ -363,3 +364,32 @@ async def trade_history(ticker: str = "", limit: int = 50):
 async def get_indicators(ticker: str):
     from .main import strategy
     return strategy.get_indicators(ticker.upper())
+
+
+# === Backtesting ===
+
+@router.post("/backtest", response_model=dict)
+async def run_backtest(request: dict):
+    from .backtest import BacktestEngine
+    from .settings_store import current as get_settings
+
+    cfg = get_settings()
+    tickers_raw = request.get("tickers", cfg.get("tickers", "RELIANCE.NS,TCS.NS"))
+    tickers = [t.strip() for t in tickers_raw.split(",") if t.strip()][:10]
+    period = request.get("period", "6mo")
+    interval = request.get("interval", "1h")
+
+    engine = BacktestEngine(
+        initial_capital=float(request.get("initial_capital", cfg.get("initial_capital", 100000))),
+        max_positions=int(request.get("max_positions", cfg.get("max_positions", 3))),
+        position_size_pct=float(request.get("position_size_pct", cfg.get("position_size_pct", 5))),
+        take_profit_pct=float(request.get("take_profit_pct", cfg.get("take_profit_pct", 2.0))),
+        stop_loss_pct=float(request.get("stop_loss_pct", cfg.get("stop_loss_pct", 3.0))),
+        rsi_period=int(request.get("rsi_period", cfg.get("rsi_period", 14))),
+        rsi_oversold=float(request.get("rsi_oversold", cfg.get("rsi_oversold", 55))),
+        rsi_overbought=float(request.get("rsi_overbought", cfg.get("rsi_overbought", 70))),
+    )
+
+    result = await asyncio.to_thread(engine.run, tickers, period, interval)
+    result["params"] = {"tickers": tickers, "period": period, "interval": interval}
+    return result

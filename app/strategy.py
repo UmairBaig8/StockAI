@@ -45,9 +45,10 @@ class StrategyAgent:
         while True:
             await asyncio.sleep(15)
 
-            # Heartbeat every 5 min
-            now = asyncio.get_event_loop().time()
-            if now - last_heartbeat > 300:
+            try:
+                # Heartbeat every 5 min
+                now = asyncio.get_event_loop().time()
+                if now - last_heartbeat > 300:
                 tickers = {t: f"n={len(p)}" for t, p in self.price_history.items()}
                 logger.info(f"Strategy heartbeat: wallet=₹{wallet_instance.available:,.0f} positions={len(wallet_instance.positions)} data={tickers}")
                 last_heartbeat = now
@@ -162,6 +163,9 @@ class StrategyAgent:
                                 await self._publish_trade(trade)
                                 self._last_forced_trade = now
                                 logger.info(f"Strategy: {ticker} SELL (forced exit) qty={pos.qty} @ {current:.2f} — freeing position slot")
+
+            except Exception as e:
+                logger.error(f"Strategy loop error (will retry): {e}", exc_info=True)
 
     def _calc_rsi(self, prices: list[float]) -> float:
         if len(prices) < 2:

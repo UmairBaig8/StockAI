@@ -1,6 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -12,6 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.memory
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -35,6 +37,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.orchestrator
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
@@ -56,6 +59,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILD_MODE: ${BUILD_MODE:-debug}
+    restart: unless-stopped
     environment:
       - REDIS_ADDR=redis://redis:6379
       - BROKER_WS_URL=ws://memory:8000/ws/market

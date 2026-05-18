@@ -3,12 +3,20 @@ import json
 import logging
 import os
 from collections import deque
+from datetime import datetime, timezone, timedelta
 
 import httpx
 from .wallet import wallet as wallet_instance
 from . import settings_store as settings_store
 
 logger = logging.getLogger(__name__)
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+# Hours when auto-discovery and trading are active
+DISCOVERY_HOURS = [9, 10, 11, 12, 13, 14]  # IST hours
+MARKET_OPEN = (9, 15)
+MARKET_CLOSE = (15, 30)
 
 
 class StrategyAgent:
@@ -17,6 +25,8 @@ class StrategyAgent:
         self.last_signal: dict[str, float] = {}
         self._load_config()
         self._last_forced_trade = 0.0
+        self._last_discovery_hour = -1
+        self._last_discovery_date = ""
         settings_store.on_change(self._on_settings_change)
 
     def _load_config(self, cfg: dict | None = None):
@@ -39,6 +49,19 @@ class StrategyAgent:
     def _on_settings_change(self, cfg: dict):
         self._load_config(cfg)
 
+    def _ist_now(self) -> datetime:
+        return datetime.now(IST)
+
+    def _is_market_open(self) -> bool:
+        now = self._ist_now()
+        if now.weekday() >= 5:  # Sat=5, Sun=6
+            return False
+        t = now.hour * 60 + now.minute
+        return MARKET_OPEN[0] * 60 + MARKET_OPEN[1] <= t < MARKET_CLOSE[0] * 60 + MARKET_CLOSE[1]
+
+    def _trading_day_key(self) -> str:
+        return self._ist_now().strftime("%Y-%m-%d")
+
     def feed_quote(self, quote: dict):
         ticker = quote.get("ticker", "")
         price = quote.get("last_price", 0)
@@ -57,12 +80,17 @@ class StrategyAgent:
         while True:
             await asyncio.sleep(15)
 
-            # Heartbeat every 5 min
+            # Heartbeat every 5 min — also check auto-discovery schedule
             now = asyncio.get_event_loop().time()
             if now - last_heartbeat > 300:
                 tickers = {t: f"n={len(p)}" for t, p in self.price_history.items()}
-                logger.info(f"Strategy heartbeat: wallet=₹{wallet_instance.available:,.0f} positions={len(wallet_instance.positions)} data={tickers}")
+                is_open = self._is_market_open()
+                logger.info(f"Strategy heartbeat: wallet=₹{wallet_instance.available:,.0f} positions={len(wallet_instance.positions)} market={'OPEN' if is_open else 'CLOSED'} data={tickers}")
                 last_heartbeat = now
+
+                # Auto-discovery at scheduled IST hours (9, 10, 11, 12, 13, 14)
+                if is_open:
+                    await self._maybe_discover()
 
             wallets = wallet_instance.snapshot()
             open_count = len(wallets.get("positions", {}))
@@ -132,48 +160,119 @@ class StrategyAgent:
                 self.last_signal[ticker] = now
                 logger.info(f"Strategy: {ticker} {signal['direction']} qty={qty} @ {current:.2f} — {signal['reason']}")
 
-            # Paper-trade stress: force one trade every 5 min if no signals fired
+            # If no natural signal, pick best opportunity across all tickers
             if not had_signal:
                 now = asyncio.get_event_loop().time()
                 if self.force_trade_sec > 0 and now - self._last_forced_trade > self.force_trade_sec:
-                    import random
-                    if open_count < self.max_positions:
-                        # Force BUY on random ticker
-                        tickers = list(self.price_history.keys())
-                        if tickers:
-                            ticker = random.choice(tickers)
-                            prices = list(self.price_history[ticker])
-                            if len(prices) >= 2:
-                                current = prices[-1]
-                                notional = wallet_instance.available * (self.max_position_pct / 100)
-                                qty = max(1, int(notional / current))
-                                trade = {
-                                    "ticker": ticker, "exchange": "NSE", "direction": "BUY",
-                                    "quantity": qty, "price": current,
-                                    "reason": "Paper-run forced trade (no market signals)",
-                                    "timestamp": now,
-                                }
-                                await self._publish_trade(trade)
-                                self._last_forced_trade = now
-                                logger.info(f"Strategy: {ticker} BUY (forced) qty={qty} @ {current:.2f} — paper-run stress test")
-                    else:
-                        # Max positions — force SELL a random held position to free slots
-                        held = list(wallet_instance.positions.keys())
-                        if held:
-                            ticker = random.choice(held)
-                            pos = wallet_instance.positions[ticker]
-                            prices = list(self.price_history.get(ticker, []))
-                            if len(prices) >= 2:
-                                current = prices[-1]
-                                trade = {
-                                    "ticker": ticker, "exchange": "NSE", "direction": "SELL",
-                                    "quantity": pos.qty, "price": current,
-                                    "reason": f"Paper-run forced exit (max positions, freeing slot)",
-                                    "timestamp": now,
-                                }
-                                await self._publish_trade(trade)
-                                self._last_forced_trade = now
-                                logger.info(f"Strategy: {ticker} SELL (forced exit) qty={pos.qty} @ {current:.2f} — freeing position slot")
+                    await self._pick_best_trade(open_count)
+
+    async def _maybe_discover(self):
+        """Auto-discover trending tickers at scheduled IST hours."""
+        now = self._ist_now()
+        today = self._trading_day_key()
+        hour = now.hour
+        if hour in DISCOVERY_HOURS and (today != self._last_discovery_date or hour != self._last_discovery_hour):
+            self._last_discovery_hour = hour
+            self._last_discovery_date = today
+            logger.info(f"Auto-discovery triggered at {now.strftime('%H:%M')} IST")
+            try:
+                async with httpx.AsyncClient(timeout=30) as c:
+                    r = await c.post(
+                        f"{self.memory_url}/api/v1/tickers/discover",
+                        json={"count": 8},
+                    )
+                    if r.status_code == 200:
+                        data = r.json()
+                        logger.info(f"Discovered {data.get('added', 0)} new tickers")
+            except Exception as e:
+                logger.warning(f"Auto-discovery failed: {e}")
+
+    async def _pick_best_trade(self, open_count: int):
+        """Pick the highest-scoring opportunity across all tickers."""
+        now = asyncio.get_event_loop().time()
+
+        if open_count < self.max_positions:
+            # Find best BUY candidate
+            best_score, best_ticker, best_price = -999, None, 0.0
+            for ticker, prices in self.price_history.items():
+                if ticker in wallet_instance.positions:
+                    continue
+                if len(prices) < self.rsi_period:
+                    continue
+                score = self._score_ticker(ticker, list(prices))
+                if score > best_score:
+                    best_score, best_ticker = score, ticker
+                    best_price = prices[-1]
+
+            if best_ticker and best_price > 0:
+                notional = wallet_instance.available * (self.max_position_pct / 100)
+                qty = max(1, int(notional / best_price))
+                rsi = self._calc_rsi(list(self.price_history[best_ticker]))
+                reason = f"Best opportunity RSI={rsi:.0f} score={best_score:.1f}"
+                await self._publish_trade({
+                    "ticker": best_ticker, "exchange": "NSE", "direction": "BUY",
+                    "quantity": qty, "price": best_price,
+                    "reason": reason, "timestamp": now,
+                })
+                self._last_forced_trade = now
+                logger.info(f"Strategy: {best_ticker} BUY (best pick) qty={qty} @ {best_price:.2f} — {reason}")
+        else:
+            # Max positions — sell the weakest held position
+            worst_score, worst_ticker, worst_price = 999, None, 0.0
+            for ticker in wallet_instance.positions:
+                prices = list(self.price_history.get(ticker, []))
+                if len(prices) < 2:
+                    continue
+                pos = wallet_instance.positions[ticker]
+                pnl_pct = ((prices[-1] - pos.avg_price) / pos.avg_price) * 100
+                rsi = self._calc_rsi(prices)
+                # Score: prefer selling losers (negative P&L) and overbought positions
+                score = -pnl_pct + (70 - rsi) * 0.3
+                if score < worst_score:
+                    worst_score, worst_ticker = score, ticker
+                    worst_price = prices[-1]
+
+            if worst_ticker and worst_price > 0:
+                pos = wallet_instance.positions[worst_ticker]
+                pnl_pct = ((worst_price - pos.avg_price) / pos.avg_price) * 100
+                await self._publish_trade({
+                    "ticker": worst_ticker, "exchange": "NSE", "direction": "SELL",
+                    "quantity": pos.qty, "price": worst_price,
+                    "reason": f"Rotating out P&L={pnl_pct:+.2f}% (weakest hold)",
+                    "timestamp": now,
+                })
+                self._last_forced_trade = now
+                logger.info(f"Strategy: {worst_ticker} SELL (rotate) qty={pos.qty} @ {worst_price:.2f} — P&L={pnl_pct:+.2f}%")
+
+    def _score_ticker(self, ticker: str, prices: list[float]) -> float:
+        """Score a ticker for BUY opportunity. Higher = better. Negative = skip."""
+        if len(prices) < self.rsi_period:
+            return -999
+
+        rsi = self._calc_rsi(prices)
+        current = prices[-1]
+
+        # Price momentum over last 5 candles
+        lookback = min(5, len(prices))
+        momentum = ((current - prices[-lookback]) / prices[-lookback]) * 100 if prices[-lookback] > 0 else 0
+
+        # Volume proxy: price range (high-low) / price = activity measure
+        pmin = min(prices[-min(14, len(prices)):])
+        pmax = max(prices[-min(14, len(prices)):])
+        activity = ((pmax - pmin) / pmin * 100) if pmin > 0 else 0
+
+        # Score: prefer oversold + positive momentum + active stocks
+        score = (self.rsi_oversold - rsi) * 1.5   # RSI below oversold = good
+        score += momentum * 2.0                     # momentum is key
+        score += activity * 0.5                     # prefer active stocks
+
+        # Filter: skip dead/flat stocks
+        if activity < 0.3:
+            return -998
+        if rsi > self.rsi_overbought:
+            return -997  # overbought — don't buy
+
+        return score
 
     def _calc_rsi(self, prices: list[float]) -> float:
         if len(prices) < 2:

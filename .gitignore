@@ -44,3 +44,6 @@ data/
 Thumbs.db
 stockai-key.pem
 *.pem
+
+# Session logs
+session-*.md

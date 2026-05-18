@@ -26,10 +26,12 @@ curl -sSL https://raw.githubusercontent.com/UmairBaig8/StockAI/main/install.sh |
 **AWS EC2 (one command):**
 ```bash
 # Requires: AWS CLI authenticated + DeepSeek key
-aws sso login
+aws login
 MEMORY_DEEPSEEK_API_KEY=sk-... bash aws-deploy.sh
 ```
 Creates t2.small, security group, deploys via user-data. Prints dashboard URL when ready.
+
+See [aws_env.md](aws_env.md) for current deployment status, commands, and instance details. See [production_ready.md](production_ready.md) for what's needed to go live (broker keys only).
 
 **Fresh EC2 instance (run inside the EC2 shell):**
 ```bash
@@ -49,10 +51,12 @@ Auto-installs Docker, clones repo, builds, starts. No Go/Rust/Python needed on h
 
 | Agent | Role | When |
 |-------|------|------|
-| **Critic** | Analyzes losing trades, generates correction rules | After-market (3:30 PM) |
-| **Researcher** | Scans news/sentiment for a ticker | On-demand / pre-market |
+| **Critic** | Analyzes losing trades, generates correction rules | Post-trade (LOSS) |
+| **Researcher** | Research & sentiment analysis for a ticker | On-demand |
 | **Devil's Advocate** | Argues against every trade, risk scoring | Pre-execution |
-| **Actor** | Places trades after all checks pass | Market hours |
+| **Sentiment** | Market sentiment analysis (LLM) | On-demand |
+| **Macro Analyst** | Macro-economic context analysis (LLM) | On-demand |
+| **Strategy** | Auto-trading RSI strategy + forced paper trades | Every 15s |
 
 ## Self-Evolution
 
@@ -85,9 +89,34 @@ The agent doesn't rewrite its code. It learns via a **Feedback Loop**:
 | `/api/v1/advocate` | POST | Devil's Advocate risk check before trade |
 | `/api/v1/wallet` | GET | Portfolio snapshot (capital, invested, positions, P&L) |
 | `/api/v1/wallet/reset` | POST | Reset wallet to initial capital |
-| `/api/v1/dash` | GET | Dashboard aggregated data |
+| `/api/v1/dash` | GET | Dashboard aggregated data (trades, events, postmortems) |
 | `/api/v1/dash/trade` | POST | Log executed trade to dashboard |
+| `/api/v1/quote/{ticker}` | GET | Live market quote for a ticker |
+| `/api/v1/sentiment` | POST | Sentiment analysis for a ticker |
+| `/api/v1/macro` | POST | Macro-economic context analysis |
 | `/ws/market` | WebSocket | Real-time NSE quotes (yfinance, 2s poll) |
+| `/orders` | POST | Paper order placement (returns mock order_id) |
+| `/orders/{order_id}` | DELETE | Cancel paper order |
+
+## Paper Trading (Current Mode)
+
+The system is currently running a **paper trading simulation** on AWS EC2. Trades flow through the full pipeline but use a mock broker (no real money).
+
+**What's real:**
+- Live NSE market data (yfinance, 5 tickers: RELIANCE, TATAPOWER, HAL, BEL, SBIN)
+- Strategy agent evaluating RSI every 15 seconds
+- Forced paper trades every 5 min if no natural signals fire
+- Devil's Advocate LLM review before each trade
+- Vector memory similarity check (LanceDB)
+- Postmortem analysis on every loss (Critic agent)
+- Wallet position tracking & P&L
+- Real-time dashboard via WebSocket
+
+**What's simulated:**
+- Order execution (mock broker, paper only)
+- Exit prices (synthetic ±2% variation from entry)
+
+**To go live:** Add real broker API keys — see [production_ready.md](production_ready.md).
 
 ## Env Variables
 
@@ -154,18 +183,24 @@ StockAI/
 │   ├── config.py                # Settings (env-based)
 │   ├── models.py                # Pydantic schemas
 │   ├── router.py                # API routes
+│   ├── strategy.py              # Auto-trading RSI strategy
 │   ├── critic.py                # Post-mortem LLM agent
-│   ├── researcher.py            # News/sentiment agent
+│   ├── researcher.py            # Research agent
 │   ├── devils_advocate.py       # Pre-trade risk checker
+│   ├── sentiment_agent.py       # Sentiment analysis agent
+│   ├── macro_analyst.py         # Macro-economic analysis agent
 │   ├── vector_store.py          # LanceDB interface
 │   ├── market_data.py           # yfinance → WebSocket bridge
 │   ├── wallet.py                # Portfolio tracking
 │   ├── events.py                # In-memory event store
 │   └── llm/                     # Multi-provider LLM adapters
-├── templates/dashboard.html     # Monitoring dashboard
+│       └── providers.py         # Gemini, OpenAI, Anthropic, DeepSeek, Bedrock, Ollama
+├── app/templates/dashboard.html # Real-time monitoring dashboard
 ├── docker-compose.yml
-├── install.sh                   # One-line bootstrap
-├── deploy.sh                    # AWS EC2 deploy
+├── install.sh                   # One-line bootstrap (macOS, Linux, EC2)
+├── aws-deploy.sh                # AWS EC2 one-command deploy
+├── aws_env.md                   # AWS deployment reference
+├── production_ready.md          # Production readiness checklist
 ├── Makefile
 └── .env.example
 ```

@@ -25,6 +25,7 @@ class StrategyAgent:
         self.rsi_overbought = 70
         self.redis_url = os.getenv("REDIS_ADDR", "redis://redis:6379")
         self.memory_url = os.getenv("MEMORY_URL", "http://memory:8000")
+        self._last_forced_trade = 0.0
 
     def feed_quote(self, quote: dict):
         ticker = quote.get("ticker", "")
@@ -56,6 +57,8 @@ class StrategyAgent:
             if open_count >= self.max_positions:
                 continue
 
+            had_signal = False
+
             for ticker, prices in self.price_history.items():
                 if len(prices) < self.rsi_period:
                     continue
@@ -84,6 +87,8 @@ class StrategyAgent:
 
                 if not signal:
                     continue
+
+                had_signal = True
 
                 # Size: max 5% of wallet
                 notional = wallet_instance.available * (self.max_position_pct / 100)
@@ -116,6 +121,32 @@ class StrategyAgent:
                 await self._publish_trade(trade)
                 self.last_signal[ticker] = now
                 logger.info(f"Strategy: {ticker} {signal['direction']} qty={qty} @ {current:.2f} — {signal['reason']}")
+
+            # Paper-trade stress: force one trade every 5 min if no signals fired
+            if not had_signal and open_count < self.max_positions:
+                now = asyncio.get_event_loop().time()
+                if now - self._last_forced_trade > 300:
+                    import random
+                    tickers = list(self.price_history.keys())
+                    if tickers:
+                        ticker = random.choice(tickers)
+                        prices = list(self.price_history[ticker])
+                        if len(prices) >= 2:
+                            current = prices[-1]
+                            notional = wallet_instance.available * (self.max_position_pct / 100)
+                            qty = max(1, int(notional / current))
+                            trade = {
+                                "ticker": ticker,
+                                "exchange": "NSE",
+                                "direction": "BUY",
+                                "quantity": qty,
+                                "price": current,
+                                "reason": "Paper-run forced trade (no market signals)",
+                                "timestamp": now,
+                            }
+                            await self._publish_trade(trade)
+                            self._last_forced_trade = now
+                            logger.info(f"Strategy: {ticker} BUY (forced) qty={qty} @ {current:.2f} — paper-run stress test")
 
     def _calc_rsi(self, prices: list[float]) -> float:
         if len(prices) < 2:

@@ -65,3 +65,30 @@ class ResearcherAgent:
             except Exception as e:
                 logger.error(f"Research failed for {req.ticker}: {e}")
         return results
+
+    def discover_tickers(self, count: int = 10) -> list[str]:
+        """Ask LLM for top trending/moving NSE tickers right now."""
+        prompt = f"""You are a real-time NSE market scanner. Based on current market conditions (May 2026), suggest {count} actively traded NSE stocks with .NS suffix that are likely showing strong movement or high volume today. Focus on liquid, high-market-cap stocks from diverse sectors. Consider:
+- Current market momentum and sectors in focus
+- Stocks with recent news, earnings, or significant price action
+- Mix of large-cap (NIFTY 50) and select high-volume mid-caps
+
+Reply ONLY with valid JSON array of tickers. No markdown, no explanation.
+Example: ["RELIANCE.NS", "TCS.NS", "INFY.NS", ...]"""
+
+        try:
+            data = self.llm.generate_json(
+                "You are an NSE market scanner. Reply ONLY with a JSON array of ticker strings.",
+                prompt,
+                temperature=0.7,
+                max_tokens=512,
+            )
+            if isinstance(data, list) and all(isinstance(t, str) for t in data):
+                tickers = [t.strip().upper() for t in data if t.strip().endswith(".NS")]
+                logger.info(f"Discovered {len(tickers)} tickers: {tickers}")
+                return tickers
+            logger.warning(f"Unexpected discover format: {type(data)}")
+            return []
+        except Exception as e:
+            logger.error(f"Ticker discovery failed: {e}")
+            return []

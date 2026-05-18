@@ -146,6 +146,7 @@
           <span class="badge" id="llm-badge">LLM: --</span>
           <span class="badge" id="clock">--</span>
           <span class="refresh" aria-live="polite">&#9679; LIVE</span>
+          <button onclick="discoverTickers()" style="font-size:0.6rem;padding:3px 8px;background:var(--surface);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;min-height:28px" aria-label="Discover trending NSE tickers" title="LLM discovers trending NSE stocks">+ Discover</button>
         </div>
       </header>
 
@@ -243,6 +244,20 @@ function updateServiceDot(idx, ok){
         dots[idx].className = 'dot '+(ok?'online':'offline');
         names[idx].style.color = ok?'var(--fg)':'var(--err)';
     }
+}
+
+async function discoverTickers(){
+    log('Discovering trending tickers via LLM...','info');
+    try{
+        const r = await fetch('/api/v1/tickers/discover', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({count:8})});
+        const d = await r.json();
+        if(d.tickers?.length){
+            log('Added '+d.tickers.length+' tickers: '+d.tickers.slice(0,5).join(', ')+(d.tickers.length>5?'...':''),'info');
+            setTimeout(pollDash, 3000);
+        } else {
+            log('No new tickers discovered','warn');
+        }
+    }catch(e){log('Discovery failed: '+e.message,'err');}
 }
 
 let mkt = {};

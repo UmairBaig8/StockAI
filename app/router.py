@@ -302,3 +302,17 @@ async def get_settings():
 async def save_settings(data: dict):
     cfg = settings_store.save(data)
     return {"ok": True, "settings": cfg}
+
+
+# === Ticker Discovery ===
+
+@router.post("/tickers/discover", response_model=dict)
+async def discover_tickers(
+    count: int = 10,
+    researcher: ResearcherAgent = Depends(get_researcher),
+):
+    from .market_data import _add_tickers
+    tickers = researcher.discover_tickers(count)
+    if tickers:
+        _add_tickers(tickers)
+    return {"tickers": tickers, "added": len(tickers)}

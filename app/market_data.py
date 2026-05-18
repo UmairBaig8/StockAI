@@ -29,6 +29,21 @@ TICKER_MAP = {
 }
 
 
+def _add_tickers(new_tickers: list[str]):
+    """Dynamically add tickers to the watchlist."""
+    global NSE_TICKERS, TICKER_MAP
+    added = []
+    for t in new_tickers:
+        t = t.strip().upper()
+        if t not in NSE_TICKERS and (t.endswith(".NS") or t.endswith(".BO")):
+            NSE_TICKERS.append(t)
+            TICKER_MAP[t] = t.replace(".NS", "").replace(".BO", "")
+            added.append(t)
+    if added:
+        logger.info(f"Added {len(added)} tickers dynamically: {added}")
+    return added
+
+
 class MarketDataBridge:
     def __init__(self):
         self.clients: list[WebSocket] = []

@@ -211,25 +211,25 @@ async fn signal_loop(
             }
         };
 
-        match engine.execute(decision, &Default::default()).await {
-            Ok(order) => {
-                // SEBI: check 2FA is active before allowing execution
-                if let Some(ref r2fa) = redis_2fa {
-                    if let Ok(mut conn) = r2fa.get_multiplexed_async_connection().await {
-                        let active: Option<String> = redis::cmd("GET").arg("2fa:active").query_async(&mut conn).await.ok().flatten();
-                        if active.is_none() {
-                            warn!("SEBI 2FA not active — rejecting {} signal for {}", signal.direction, signal.ticker);
-                            continue;
-                        }
-                    }
-                }
-
-                // SEBI: rate limit (<10 orders/sec)
-                if !rate_limiter.try_acquire() {
-                    warn!("Rate limit exceeded — rejecting {} signal for {}", signal.direction, signal.ticker);
+        // SEBI: check 2FA is active before allowing execution
+        if let Some(ref r2fa) = redis_2fa {
+            if let Ok(mut conn) = r2fa.get_multiplexed_async_connection().await {
+                let active: Option<String> = redis::cmd("GET").arg("2fa:active").query_async(&mut conn).await.ok().flatten();
+                if active.is_none() {
+                    warn!("SEBI 2FA not active — rejecting {} signal for {}", signal.direction, signal.ticker);
                     continue;
                 }
+            }
+        }
 
+        // SEBI: rate limit (<10 orders/sec)
+        if !rate_limiter.try_acquire() {
+            warn!("Rate limit exceeded — rejecting {} signal for {}", signal.direction, signal.ticker);
+            continue;
+        }
+
+        match engine.execute(decision, &Default::default()).await {
+            Ok(order) => {
                 info!("Order placed: {} {} ({})", order.id, signal.ticker, signal.direction);
 
                 let now = chrono::Utc::now().to_rfc3339();

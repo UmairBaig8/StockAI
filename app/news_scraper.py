@@ -17,7 +17,7 @@ RSS_FEEDS = [
     "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms",
 ]
 
-NSE_TICKER_PATTERN = re.compile(r'\b([A-Z]{2,20})\b')
+NSE_TICKER_PATTERN = re.compile(r'\b([A-Z]{2,20})\b')  # kept for reference
 COMMON_WORDS = {"THE", "AND", "FOR", "LTD", "NSE", "BSE", "IPO", "Q1", "Q2", "Q3", "Q4",
                 "FY24", "FY25", "FY26", "RSI", "NIFTY", "SENSEX", "INDIA", "STOCK", "STOCKS",
                 "MARKET", "NEWS", "RUPEE", "DOLLAR", "BANK", "RBI", "SEBI", "GST", "CEO", "CFO",
@@ -57,15 +57,41 @@ def _extract_tickers(text: str) -> list[str]:
     """Extract known NSE ticker names from text."""
     tickers = set()
     upper = text.upper()
+
+    # Direct ticker match
     for t in KNOWN_TICKERS:
-        if t in upper:
-            # Check word boundary to avoid partial matches
-            idx = upper.find(t)
-            if idx >= 0:
-                before = upper[idx-1] if idx > 0 else ' '
-                after = upper[idx+len(t)] if idx+len(t) < len(upper) else ' '
-                if not before.isalpha() and not after.isalpha():
-                    tickers.add(t)
+        idx = upper.find(t)
+        if idx >= 0:
+            before = upper[idx-1] if idx > 0 else ' '
+            after = upper[idx+len(t)] if idx+len(t) < len(upper) else ' '
+            if not before.isalpha() or not after.isalpha():
+                tickers.add(t)
+
+    # Company name → ticker fuzzy match
+    COMPANY_TO_TICKER = {
+        "ICICI": "ICICIBANK", "HDFC": "HDFCBANK", "SBI": "SBIN",
+        "TATA MOTORS": "TATAMOTORS", "TATA STEEL": "TATASTEEL",
+        "TATA ELXSI": "TATAELXSI", "TATA POWER": "TATAPOWER",
+        "TATA CONSUMER": "TATACONSUM", "BHARTI AIRTEL": "BHARTIARTL",
+        "HINDUSTAN UNILEVER": "HINDUNILVR", "HINDALCO": "HINDALCO",
+        "ADANI PORTS": "ADANIPORTS", "ADANI ENTER": "ADANIENT",
+        "SUN PHARMA": "SUNPHARMA", "DR REDDY": "DRREDDY",
+        "LARSEN": "LT", "TOUBRO": "LT",
+        "APOLLO HOSP": "APOLLOHOSP", "EICHER": "EICHERMOT",
+        "HERO MOTO": "HEROMOTOCO", "BAJAJ FIN": "BAJFINANCE",
+        "BAJAJ AUTO": "BAJAJHLDNG", "ASIAN PAINT": "ASIANPAINT",
+        "NESTLE": "NESTLE", "ULTRATECH": "ULTRACEMCO",
+        "POWER GRID": "POWERGRID", "COAL INDIA": "COALINDIA",
+        "JSW STEEL": "JSWSTEEL", "TECH MAHINDRA": "TECHM",
+        "DIVIS LAB": "DIVISLAB", "GRASIM": "GRASIM",
+        "BRITANNIA": "BRITANNIA", "MUTHOOT": "MUTHOOTFIN",
+        "CYIENT": "CYIENT", "LTIMINDTREE": "LTIM",
+        "MINDTREE": "LTIM", "BEL": "BEL", "HAL": "HAL",
+    }
+    for name, ticker in COMPANY_TO_TICKER.items():
+        if name in upper and len(name) >= 3:
+            tickers.add(ticker)
+
     return sorted(tickers)[:5]
 
 

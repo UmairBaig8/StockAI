@@ -15,13 +15,13 @@ class StrategyAgent:
         self.config = config or {}
         self.price_history: dict[str, deque[float]] = {}
         self.last_signal: dict[str, float] = {}
-        self.signal_cooldown = 300
+        self.signal_cooldown = 120  # 2 min cooldown (relaxed for paper trading)
         self.max_position_pct = 5.0
         self.max_positions = 3
         self.take_profit_pct = 2.0
         self.stop_loss_pct = 3.0
         self.rsi_period = 14
-        self.rsi_oversold = 45  # More lenient for catching opportunities
+        self.rsi_oversold = 55  # Relaxed for paper trading — generates more signals
         self.rsi_overbought = 70
         self.redis_url = os.getenv("REDIS_ADDR", "redis://redis:6379")
         self.memory_url = os.getenv("MEMORY_URL", "http://memory:8000")
@@ -72,7 +72,7 @@ class StrategyAgent:
                 rsi = self._calc_rsi(list(prices))
 
                 signal = None
-                if rsi < self.rsi_oversold and change_pct < -0.5:
+                if rsi < self.rsi_oversold and change_pct < -0.2:
                     signal = {"direction": "BUY", "reason": f"Oversold RSI={rsi:.0f} change={change_pct:+.2f}%"}
                 elif ticker in wallet_instance.positions:
                     pos = wallet_instance.positions[ticker]

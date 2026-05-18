@@ -204,12 +204,9 @@ async fn signal_loop(
                     let _: () = pub_conn.publish("trade:result", result_json).await?;
 
                 } else {
-                    // SELL — compute real P&L from live market price vs entry
+                    // SELL — compute real P&L using signal price (from yfinance) as exit
                     let pos = positions.remove(&ticker);
-                    let exit_price = {
-                        let prices = price_map.read().await;
-                        prices.get(&ticker).copied().unwrap_or(signal.price)
-                    };
+                    let exit_price = signal.price;  // strategy sends current yfinance price
 
                     let (pnl_pct, status) = if let Some(pos) = pos {
                         let pnl = (exit_price - pos.entry_price) / pos.entry_price * 100.0;

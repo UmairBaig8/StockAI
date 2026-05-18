@@ -49,9 +49,9 @@ class StrategyAgent:
                 # Heartbeat every 5 min
                 now = asyncio.get_event_loop().time()
                 if now - last_heartbeat > 300:
-                tickers = {t: f"n={len(p)}" for t, p in self.price_history.items()}
-                logger.info(f"Strategy heartbeat: wallet=₹{wallet_instance.available:,.0f} positions={len(wallet_instance.positions)} data={tickers}")
-                last_heartbeat = now
+                    tickers = {t: f"n={len(p)}" for t, p in self.price_history.items()}
+                    logger.info(f"Strategy heartbeat: wallet=₹{wallet_instance.available:,.0f} positions={len(wallet_instance.positions)} data={tickers}")
+                    last_heartbeat = now
 
             wallets = wallet_instance.snapshot()
             open_count = len(wallets.get("positions", {}))

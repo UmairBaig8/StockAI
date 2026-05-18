@@ -183,6 +183,13 @@ func signalLoop(ctx context.Context, rdb *redis.Client, tg *telegram.Bot, memory
 			} else {
 				log.Printf("Trade: %s %s @ %.2f [%s]", result.Ticker, result.Direction, result.EntryPrice, result.Status)
 			}
+			pushTradeToDash(result, memoryURL)
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
 	pushTradeToDash(result, memoryURL)
 
 	resp.Body.Close()

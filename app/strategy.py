@@ -363,6 +363,112 @@ class StrategyAgent:
             return False
         return current >= upper * 0.995 and len(prices) >= 20
 
+    # ── Market Regime Detection (ADX + ATR) ──
+
+    def _calc_adx(self, prices: list[float], highs: list[float] | None = None, lows: list[float] | None = None, period: int = 14) -> float:
+        """ADX: >25 trending, <20 choppy. Uses price range as proxy if no high/low."""
+        n = len(prices)
+        if n < period + 1:
+            return 0
+        # Use price range (high-low proxy) if no real OHLC data
+        tr_list = []
+        dm_plus = []
+        dm_minus = []
+        for i in range(1, n):
+            curr_high = highs[i] if highs and i < len(highs) else max(prices[i], prices[i-1])
+            curr_low = lows[i] if lows and i < len(lows) else min(prices[i], prices[i-1])
+            prev_high = highs[i-1] if highs and i-1 < len(highs) else max(prices[i-1], prices[i-2]) if i >= 2 else prices[i-1]
+            prev_low = lows[i-1] if lows and i-1 < len(lows) else min(prices[i-1], prices[i-2]) if i >= 2 else prices[i-1]
+            prev_close = prices[i-1]
+            # True Range
+            tr = max(curr_high - curr_low, abs(curr_high - prev_close), abs(curr_low - prev_close))
+            tr_list.append(tr)
+            # Directional Movement
+            up_move = curr_high - prev_high
+            down_move = prev_low - curr_low
+            dm_plus.append(up_move if up_move > down_move and up_move > 0 else 0)
+            dm_minus.append(down_move if down_move > up_move and down_move > 0 else 0)
+
+        if len(tr_list) < period:
+            return 0
+
+        # Smooth with Wilder's method (EMA-like)
+        tr_smooth = sum(tr_list[:period])
+        dp_smooth = sum(dm_plus[:period])
+        dm_smooth = sum(dm_minus[:period])
+        for i in range(period, len(tr_list)):
+            tr_smooth = tr_smooth - tr_smooth/period + tr_list[i]
+            dp_smooth = dp_smooth - dp_smooth/period + dm_plus[i]
+            dm_smooth = dm_smooth - dm_smooth/period + dm_minus[i]
+
+        di_plus = (dp_smooth / tr_smooth * 100) if tr_smooth > 0 else 0
+        di_minus = (dm_smooth / tr_smooth * 100) if tr_smooth > 0 else 0
+        dx = abs(di_plus - di_minus) / (di_plus + di_minus) * 100 if (di_plus + di_minus) > 0 else 0
+
+        # ADX = smoothed DX
+        return dx  # simplified — full would need another Wilder smooth
+
+    def _calc_atr(self, prices: list[float], period: int = 14) -> float:
+        """Average True Range — volatility measure."""
+        if len(prices) < period:
+            return 0
+        trs = []
+        for i in range(1, len(prices)):
+            high = max(prices[i], prices[i-1])
+            low = min(prices[i], prices[i-1])
+            tr = max(high - low, abs(high - prices[i-1]), abs(low - prices[i-1]))
+            trs.append(tr)
+        return sum(trs[-period:]) / period if trs else 0
+
+    def _detect_regime(self, prices: list[float]) -> dict:
+        """Returns regime: trending/choppy + volatility level."""
+        adx = self._calc_adx(prices)
+        atr = self._calc_atr(prices)
+        avg_price = sum(prices[-14:]) / len(prices[-14:]) if len(prices) >= 14 else prices[-1]
+        atr_pct = (atr / avg_price * 100) if avg_price > 0 else 0
+
+        if adx > 25:
+            regime = "trending"
+        elif adx > 18:
+            regime = "weak_trend"
+        else:
+            regime = "choppy"
+
+        volatility = "high" if atr_pct > 2 else "medium" if atr_pct > 0.8 else "low"
+        return {"regime": regime, "adx": round(adx, 1), "atr": round(atr, 2), "atr_pct": round(atr_pct, 2), "volatility": volatility}
+
+    def get_indicators(self, ticker: str) -> dict:
+        """Debug: return all computed indicators for a ticker."""
+        prices = list(self.price_history.get(ticker, []))
+        if len(prices) < 14:
+            return {"ticker": ticker, "error": "insufficient data", "points": len(prices)}
+
+        rsi = self._calc_rsi(prices)
+        macd, signal, hist = self._calc_macd(prices)
+        bb_lower, bb_mid, bb_upper = self._calc_bb(prices)
+        regime = self._detect_regime(prices)
+        current = prices[-1]
+        change_pct = ((current - prices[0]) / prices[0] * 100) if prices[0] > 0 else 0
+        momentum = ((current - prices[-min(5, len(prices))]) / prices[-min(5, len(prices))] * 100) if len(prices) >= 5 else 0
+        mtf = {
+            "1m": round(self._calc_rsi(prices[-14:]), 1) if len(prices) >= 14 else None,
+            "5m": round(self._calc_rsi(prices[-int(min(14*5, len(prices)))::5]), 1) if len(prices) >= 30 else None,
+            "15m": round(self._calc_rsi(prices[-int(min(14*15, len(prices)))::15]), 1) if len(prices) >= 50 else None,
+        }
+
+        return {
+            "ticker": ticker,
+            "price": round(current, 2),
+            "change_pct": round(change_pct, 2),
+            "momentum_5": round(momentum, 2),
+            "rsi": round(rsi, 1),
+            "rsi_mtf": mtf,
+            "macd": {"line": round(macd, 4), "signal": round(signal, 4), "histogram": round(hist, 4)},
+            "bb": {"lower": round(bb_lower, 2), "mid": round(bb_mid, 2), "upper": round(bb_upper, 2)},
+            "regime": regime,
+            "points": len(prices),
+        }
+
     # ── Trailing Stop ──
 
     def _check_trailing_stop(self, ticker: str, current: float, entry: float) -> bool:

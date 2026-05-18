@@ -355,3 +355,11 @@ async def trade_history(ticker: str = "", limit: int = 50):
     trades = await db.get_trades(limit=limit, ticker=ticker)
     summary = await db.get_summary(ticker=ticker)
     return {"trades": trades, "summary": summary, "ticker": ticker}
+
+
+# === Indicators (debug) ===
+
+@router.get("/indicators/{ticker}", response_model=dict)
+async def get_indicators(ticker: str):
+    from .main import strategy
+    return strategy.get_indicators(ticker.upper())

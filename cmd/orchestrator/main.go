@@ -84,7 +84,21 @@ func main() {
 	tgBot := telegram.NewBot(cfg.TelegramBotToken, cfg.TelegramChatID)
 	tokenMgr := token.NewManager()
 	brokerAPI := broker.NewMockAPI()
-	h := handler.New(tokenMgr, brokerAPI, tgBot)
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: os.Getenv("REDIS_PASSWORD"),
+		DB:       0,
+	})
+	ctx := context.Background()
+
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Printf("Warning: Redis not available: %v", err)
+	} else {
+		log.Println("Redis connected")
+	}
+
+	h := handler.New(tokenMgr, brokerAPI, tgBot, rdb)
 
 	sched := scheduler.New()
 	sched.Register(
@@ -117,19 +131,6 @@ func main() {
 			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: os.Getenv("REDIS_PASSWORD"),
-		DB:       0,
-	})
-	ctx := context.Background()
-
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Printf("Warning: Redis not available: %v", err)
-	} else {
-		log.Println("Redis connected")
-	}
 
 	if err := tgBot.SendStatus("StockAI Orchestrator online. Redis: " + redisAddr); err != nil {
 		log.Printf("Warning: Startup notification failed: %v", err)

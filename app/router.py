@@ -90,6 +90,9 @@ async def run_postmortem(
         f"Postmortem: {trade.trade_execution.ticker} {result.analysis.mistake_category.value} — {result.evolutionary_overlay.correction_rule[:60]}..."
     )
 
+    # SEBI audit trail
+    store.audit_log("postmortem", trade.trade_execution.ticker, result.model_dump())
+
     logger.info(f"Post-mortem stored: {entry_id}")
     return result
 
@@ -236,8 +239,11 @@ async def health(
 
 
 @router.post("/dash/trade", response_model=dict)
-async def log_trade(trade: DashTrade):
+async def log_trade(trade: DashTrade, store: VectorStore = Depends(get_store)):
     event_store.add_trade(trade)
+
+    # SEBI audit trail
+    store.audit_log("trade", trade.ticker, trade.model_dump())
 
     notional = trade.entry_price * trade.qty
     try:

@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, List
 import logging
+from datetime import datetime, timezone
 
 from .config import Settings
 from .models import MemoryEntry, PreTradeResult, MarketState
@@ -33,6 +34,15 @@ class VectorStore:
                 ],
             )
         self.table = self.db.open_table("trading_memory")
+
+        # Audit trail — SEBI 5-year compliant append-only log
+        if "audit_trail" not in self.db.table_names():
+            import pyarrow as pa
+            self.db.create_table(
+                "audit_trail",
+                [{"event": "init", "ticker": "", "data": "{}", "timestamp": "2026-01-01T00:00:00Z"}],
+            )
+        self.audit = self.db.open_table("audit_trail")
 
     def store(self, entry: MemoryEntry) -> str:
         rows = [
@@ -103,3 +113,16 @@ class VectorStore:
             return self.table.count_rows() - 1
         except Exception:
             return 0
+
+    def audit_log(self, event: str, ticker: str, data: dict) -> None:
+        """SEBI audit trail — append-only log of all trading events."""
+        import json
+        try:
+            self.audit.add([{
+                "event": event,
+                "ticker": ticker,
+                "data": json.dumps(data),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }])
+        except Exception as e:
+            logger.error(f"Audit log failed: {e}")

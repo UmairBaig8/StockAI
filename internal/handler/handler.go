@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"strings"
@@ -9,21 +10,24 @@ import (
 	"github.com/anomalyco/stockai-relay/internal/broker"
 	"github.com/anomalyco/stockai-relay/internal/telegram"
 	"github.com/anomalyco/stockai-relay/internal/token"
+	"github.com/redis/go-redis/v9"
 )
 
 type Handler struct {
 	tokenMgr  *token.Manager
 	brokerAPI broker.API
 	tgBot     *telegram.Bot
+	rdb       *redis.Client
 	tmpl      *template.Template
 }
 
-func New(tokenMgr *token.Manager, brokerAPI broker.API, tgBot *telegram.Bot) *Handler {
+func New(tokenMgr *token.Manager, brokerAPI broker.API, tgBot *telegram.Bot, rdb *redis.Client) *Handler {
 	tmpl := template.Must(template.New("totp").Parse(totpFormHTML))
 	return &Handler{
 		tokenMgr:  tokenMgr,
 		brokerAPI: brokerAPI,
 		tgBot:     tgBot,
+		rdb:       rdb,
 		tmpl:      tmpl,
 	}
 }
@@ -67,6 +71,13 @@ func (h *Handler) SubmitTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.tokenMgr.Set(sessionToken, 8*time.Hour)
+
+	// Activate trading in Redis — engine checks this before executing orders
+	if h.rdb != nil {
+		ctx := context.Background()
+		h.rdb.Set(ctx, "2fa:active", "1", 8*time.Hour)
+	}
+
 	h.tgBot.SendStatus("Session active. Trading agent unlocked until 15:30 IST.")
 
 	h.tmpl.Execute(w, map[string]string{

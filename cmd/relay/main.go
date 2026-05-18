@@ -27,7 +27,7 @@ func main() {
 	tgBot := telegram.NewBot(cfg.TelegramBotToken, cfg.TelegramChatID)
 	tokenMgr := token.NewManager()
 	brokerAPI := broker.NewMockAPI()
-	h := handler.New(tokenMgr, brokerAPI, tgBot)
+	h := handler.New(tokenMgr, brokerAPI, tgBot, nil)
 
 	sched := scheduler.New()
 	sched.Register(

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use std::env;
+use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -46,6 +47,38 @@ struct TradeResult {
 struct OpenPosition {
     qty: u64,
     entry_price: f64,
+}
+
+/// Token bucket rate limiter — SEBI <10 orders/sec
+struct RateLimiter {
+    tokens: f64,
+    max_tokens: f64,
+    refill_rate: f64, // tokens per second
+    last_refill: Instant,
+}
+
+impl RateLimiter {
+    fn new(max_tokens: u32, refill_per_sec: f64) -> Self {
+        Self {
+            tokens: max_tokens as f64,
+            max_tokens: max_tokens as f64,
+            refill_rate: refill_per_sec,
+            last_refill: Instant::now(),
+        }
+    }
+
+    fn try_acquire(&mut self) -> bool {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
+        self.tokens = (self.tokens + elapsed * self.refill_rate).min(self.max_tokens);
+        self.last_refill = now;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 fn redis_addr() -> String {
@@ -124,7 +157,7 @@ async fn main() {
 
 async fn signal_loop(
     engine: Arc<ExecutionEngine>,
-    price_map: PriceMap,
+    _price_map: PriceMap,
     pubsub: &mut PubSub,
     pub_conn: &mut MultiplexedConnection,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -133,6 +166,10 @@ async fn signal_loop(
 
     let mut stream = pubsub.on_message();
     let mut positions: HashMap<String, OpenPosition> = HashMap::new();
+    let mut rate_limiter = RateLimiter::new(10, 1.0); // 10 burst, refill 1/sec
+
+    // Separate Redis client for 2FA check
+    let redis_2fa = redis::Client::open(redis_addr()).ok();
 
     loop {
         let msg = stream.next().await.ok_or("pubsub stream ended")?;
@@ -176,6 +213,23 @@ async fn signal_loop(
 
         match engine.execute(decision, &Default::default()).await {
             Ok(order) => {
+                // SEBI: check 2FA is active before allowing execution
+                if let Some(ref r2fa) = redis_2fa {
+                    if let Ok(mut conn) = r2fa.get_multiplexed_async_connection().await {
+                        let active: Option<String> = redis::cmd("GET").arg("2fa:active").query_async(&mut conn).await.ok().flatten();
+                        if active.is_none() {
+                            warn!("SEBI 2FA not active — rejecting {} signal for {}", signal.direction, signal.ticker);
+                            continue;
+                        }
+                    }
+                }
+
+                // SEBI: rate limit (<10 orders/sec)
+                if !rate_limiter.try_acquire() {
+                    warn!("Rate limit exceeded — rejecting {} signal for {}", signal.direction, signal.ticker);
+                    continue;
+                }
+
                 info!("Order placed: {} {} ({})", order.id, signal.ticker, signal.direction);
 
                 let now = chrono::Utc::now().to_rfc3339();

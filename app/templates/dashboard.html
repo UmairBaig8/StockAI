@@ -174,7 +174,8 @@ let mkt = {};
 // ── Service health ──
 async function svc(){
   try{const r=await fetch('/api/v1/services');const d=await r.json();
-    ['mem','eng','orch','rdb','llm'].forEach((s,i)=>{const ok=d[s]?.online;const el=$('dot-'+s);if(el)el.className='dot '+(ok?'online':'offline')})}catch(e){}
+    const map={mem:'memory',eng:'engine',orch:'orchestrator',rdb:'redis',llm:'llm'};
+    Object.entries(map).forEach(([id,key])=>{const ok=d[key]?.online;const el=$('dot-'+id);if(el)el.className='dot '+(ok?'online':'offline')})}catch(e){}
 }
 setInterval(svc,3000);svc();
 

@@ -190,10 +190,6 @@ func signalLoop(ctx context.Context, rdb *redis.Client, tg *telegram.Bot, memory
 		}
 	}
 }
-	pushTradeToDash(result, memoryURL)
-
-	resp.Body.Close()
-}
 
 func sendDailyReport(tg *telegram.Bot, memoryURL string) {
 	resp, err := http.Get(memoryURL + "/api/v1/dash")

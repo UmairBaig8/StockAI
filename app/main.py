@@ -47,6 +47,11 @@ def create_app() -> FastAPI:
         dash_path = Path(__file__).parent / "templates" / "dashboard.html"
         return dash_path.read_text()
 
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page():
+        settings_path = Path(__file__).parent / "templates" / "settings.html"
+        return settings_path.read_text()
+
     @app.get("/favicon.ico")
     async def favicon():
         svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="#0b0b10"/><text x="16" y="22" text-anchor="middle" fill="#00ff88" font-family="monospace" font-size="18" font-weight="bold">S</text></svg>'

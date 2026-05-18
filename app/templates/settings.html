@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockAI — Settings</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f; --surface: #16161e; --border: #2a2a3a;
+    --text: #e4e4e7; --muted: #71717a; --accent: #22c55e;
+    --danger: #ef4444; --warning: #f59e0b; --input-bg: #1a1a26;
+    --radius: 8px; --focus: #3b82f6;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; line-height: 1.6;
+  }
+  /* WCAG 2.1 AA: 4.5:1 contrast ratio on all text */
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px;
+  }
+  .skip-link { position: absolute; top: -100px; left: 0; background: var(--accent); color: #000; padding: 8px 16px; z-index: 999; }
+  .skip-link:focus { top: 0; }
+  .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+  @media (max-width: 768px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+  }
+  .sidebar {
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 24px 16px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .sidebar a, .sidebar span {
+    display: block; padding: 10px 14px; border-radius: var(--radius);
+    color: var(--muted); text-decoration: none; font-size: 0.9rem;
+    transition: background 0.15s;
+  }
+  .sidebar a:hover, .sidebar a.active { background: var(--input-bg); color: var(--text); }
+  .sidebar .brand { font-weight: 700; color: var(--accent); font-size: 1.05rem; margin-bottom: 12px; }
+  .main { padding: 32px; max-width: 800px; }
+  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 28px; }
+  h2 { font-size: 1.1rem; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+  h2:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+  .form-group { margin-bottom: 16px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
+  label {
+    display: block; font-size: 0.8rem; color: var(--muted);
+    margin-bottom: 4px; font-weight: 500;
+  }
+  input, select {
+    width: 100%; padding: 10px 14px; background: var(--input-bg);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 0.95rem;
+  }
+  input:focus, select:focus { border-color: var(--focus); }
+  input[aria-invalid="true"] { border-color: var(--danger); }
+  .help { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+  .actions { margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap; }
+  button {
+    padding: 10px 24px; border: none; border-radius: var(--radius);
+    font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-reset { background: var(--input-bg); color: var(--text); border: 1px solid var(--border); }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; padding: 12px 24px;
+    border-radius: var(--radius); font-size: 0.9rem; z-index: 100;
+    animation: slideIn 0.3s ease;
+  }
+  .toast.success { background: var(--accent); color: #000; }
+  .toast.error { background: var(--danger); color: #fff; }
+  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  [role="status"] { font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
+<div class="layout">
+  <nav class="sidebar" aria-label="Main navigation">
+    <span class="brand">StockAI</span>
+    <a href="/">Dashboard</a>
+    <a href="/settings" class="active" aria-current="page">Settings</a>
+    <a href="http://3.85.55.232:8080" rel="noopener">2FA Relay</a>
+  </nav>
+
+  <main class="main" id="main-content">
+    <h1>Settings</h1>
+    <p class="subtitle">Configure strategy parameters, tickers, and LLM. Changes apply immediately.</p>
+
+    <!-- LLM -->
+    <h2 id="llm-heading">LLM Provider</h2>
+    <form aria-labelledby="llm-heading">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="llm_provider">Provider</label>
+          <select id="llm_provider" name="llm_provider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Gemini</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="bedrock">AWS Bedrock</option>
+            <option value="ollama">Ollama (local)</option>
+          </select>
+          <p class="help">API keys are managed via .env (not stored here).</p>
+        </div>
+        <div class="form-group">
+          <label for="llm_model">Model</label>
+          <input type="text" id="llm_model" name="llm_model" placeholder="deepseek-chat">
+          <p class="help">Model name for selected provider.</p>
+        </div>
+      </div>
+    </form>
+
+    <!-- Tickers -->
+    <h2 id="tickers-heading">Watchlist</h2>
+    <form aria-labelledby="tickers-heading">
+      <div class="form-group">
+        <label for="tickers">Tickers (comma-separated, NSE .NS suffix)</label>
+        <input type="text" id="tickers" name="tickers" placeholder="RELIANCE.NS,TCS.NS,INFY.NS">
+        <p class="help">Changes take effect on next strategy restart.</p>
+      </div>
+    </form>
+
+    <!-- Trading -->
+    <h2 id="trading-heading">Trading Parameters</h2>
+    <form aria-labelledby="trading-heading">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="initial_capital">Initial Capital (₹)</label>
+          <input type="number" id="initial_capital" name="initial_capital" min="1000" step="1000">
+        </div>
+        <div class="form-group">
+          <label for="max_positions">Max Open Positions</label>
+          <input type="number" id="max_positions" name="max_positions" min="1" max="20">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="position_size_pct">Position Size (%)</label>
+          <input type="number" id="position_size_pct" name="position_size_pct" min="1" max="100" step="0.5">
+        </div>
+        <div class="form-group">
+          <label for="take_profit_pct">Take Profit (%)</label>
+          <input type="number" id="take_profit_pct" name="take_profit_pct" min="0.1" max="50" step="0.1">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="stop_loss_pct">Stop Loss (%)</label>
+          <input type="number" id="stop_loss_pct" name="stop_loss_pct" min="0.1" max="50" step="0.1">
+        </div>
+        <div class="form-group">
+          <label for="signal_cooldown">Signal Cooldown (seconds)</label>
+          <input type="number" id="signal_cooldown" name="signal_cooldown" min="10" max="3600">
+        </div>
+      </div>
+    </form>
+
+    <!-- RSI -->
+    <h2 id="rsi-heading">RSI Strategy</h2>
+    <form aria-labelledby="rsi-heading">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="rsi_period">RSI Period</label>
+          <input type="number" id="rsi_period" name="rsi_period" min="2" max="50">
+        </div>
+        <div class="form-group">
+          <label for="rsi_oversold">RSI Oversold (BUY threshold)</label>
+          <input type="number" id="rsi_oversold" name="rsi_oversold" min="1" max="90">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="rsi_overbought">RSI Overbought</label>
+          <input type="number" id="rsi_overbought" name="rsi_overbought" min="10" max="100">
+        </div>
+        <div class="form-group">
+          <label for="min_drop_pct">Min Drop for BUY (%)</label>
+          <input type="number" id="min_drop_pct" name="min_drop_pct" min="0.05" max="20" step="0.05">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="force_trade_sec">Force Trade Interval (seconds, 0=disable)</label>
+          <input type="number" id="force_trade_sec" name="force_trade_sec" min="0" max="3600">
+        </div>
+        <div class="form-group"></div>
+      </div>
+    </form>
+
+    <div class="actions">
+      <button class="btn-primary" onclick="saveSettings()" aria-label="Save all settings">Save Settings</button>
+      <button class="btn-reset" onclick="loadSettings()" aria-label="Reset to saved values">Reset</button>
+      <span id="save-status" role="status"></span>
+    </div>
+  </main>
+</div>
+
+<div id="toast" class="toast success" style="display:none" role="alert" aria-live="polite"></div>
+
+<script>
+  function showToast(msg, ok) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + (ok ? 'success' : 'error');
+    t.style.display = 'block';
+    setTimeout(function() { t.style.display = 'none'; }, 4000);
+  }
+
+  async function loadSettings() {
+    try {
+      var r = await fetch('/api/v1/settings');
+      var cfg = await r.json();
+      Object.keys(cfg).forEach(function(k) {
+        var el = document.getElementById(k);
+        if (el) el.value = cfg[k];
+      });
+    } catch(e) {
+      showToast('Failed to load settings', false);
+    }
+  }
+
+  async function saveSettings() {
+    var data = {};
+    document.querySelectorAll('input[id], select[id]').forEach(function(el) {
+      if (el.type === 'number') {
+        data[el.id] = parseFloat(el.value) || 0;
+      } else {
+        data[el.id] = el.value;
+      }
+    });
+    try {
+      var r = await fetch('/api/v1/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      var result = await r.json();
+      if (result.ok) {
+        showToast('Settings saved. Strategy will reload automatically.', true);
+      } else {
+        showToast('Save failed', false);
+      }
+    } catch(e) {
+      showToast('Network error: ' + e.message, false);
+    }
+  }
+
+  loadSettings();
+</script>
+</body>
+</html>

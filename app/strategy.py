@@ -6,26 +6,38 @@ from collections import deque
 
 import httpx
 from .wallet import wallet as wallet_instance
+from . import settings_store as settings_store
 
 logger = logging.getLogger(__name__)
 
 
 class StrategyAgent:
     def __init__(self, config: dict | None = None):
-        self.config = config or {}
         self.price_history: dict[str, deque[float]] = {}
         self.last_signal: dict[str, float] = {}
-        self.signal_cooldown = 120  # 2 min cooldown (relaxed for paper trading)
-        self.max_position_pct = 5.0
-        self.max_positions = 3
-        self.take_profit_pct = 2.0
-        self.stop_loss_pct = 3.0
-        self.rsi_period = 14
-        self.rsi_oversold = 55  # Relaxed for paper trading — generates more signals
-        self.rsi_overbought = 70
+        self._load_config()
+        self._last_forced_trade = 0.0
+        settings_store.on_change(self._on_settings_change)
+
+    def _load_config(self, cfg: dict | None = None):
+        if cfg is None:
+            cfg = settings_store.current()
+        self.signal_cooldown = int(cfg.get("signal_cooldown", 120))
+        self.max_position_pct = float(cfg.get("position_size_pct", 5))
+        self.max_positions = int(cfg.get("max_positions", 3))
+        self.take_profit_pct = float(cfg.get("take_profit_pct", 2.0))
+        self.stop_loss_pct = float(cfg.get("stop_loss_pct", 3.0))
+        self.rsi_period = int(cfg.get("rsi_period", 14))
+        self.rsi_oversold = float(cfg.get("rsi_oversold", 55))
+        self.rsi_overbought = float(cfg.get("rsi_overbought", 70))
+        self.min_drop_pct = float(cfg.get("min_drop_pct", 0.2))
+        self.force_trade_sec = int(cfg.get("force_trade_sec", 300))
         self.redis_url = os.getenv("REDIS_ADDR", "redis://redis:6379")
         self.memory_url = os.getenv("MEMORY_URL", "http://memory:8000")
-        self._last_forced_trade = 0.0
+        logger.info(f"Strategy config loaded: max_pos={self.max_positions} RSI_oversold={self.rsi_oversold} cooldown={self.signal_cooldown}s")
+
+    def _on_settings_change(self, cfg: dict):
+        self._load_config(cfg)
 
     def feed_quote(self, quote: dict):
         ticker = quote.get("ticker", "")
@@ -73,7 +85,7 @@ class StrategyAgent:
                 rsi = self._calc_rsi(list(prices))
 
                 signal = None
-                if open_count < self.max_positions and rsi < self.rsi_oversold and change_pct < -0.2:
+                if open_count < self.max_positions and rsi < self.rsi_oversold and change_pct < -self.min_drop_pct:
                     signal = {"direction": "BUY", "reason": f"Oversold RSI={rsi:.0f} change={change_pct:+.2f}%"}
                 elif ticker in wallet_instance.positions:
                     pos = wallet_instance.positions[ticker]
@@ -123,7 +135,7 @@ class StrategyAgent:
             # Paper-trade stress: force one trade every 5 min if no signals fired
             if not had_signal:
                 now = asyncio.get_event_loop().time()
-                if now - self._last_forced_trade > 300:
+                if self.force_trade_sec > 0 and now - self._last_forced_trade > self.force_trade_sec:
                     import random
                     if open_count < self.max_positions:
                         # Force BUY on random ticker

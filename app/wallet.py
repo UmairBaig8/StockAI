@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -13,13 +14,20 @@ class Position:
     side: str  # LONG or SHORT
 
 
+    def _default_capital() -> float:
+        return float(os.getenv("STRATEGY_INITIAL_CAPITAL", "100000"))
+
 @dataclass
 class Wallet:
-    initial_capital: float = 100_000.0
-    available: float = 100_000.0
+    initial_capital: float = field(default_factory=_default_capital)
+    available: float = 0.0
     invested: float = 0.0
     realized_pnl: float = 0.0
     positions: dict[str, Position] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.available == 0.0:
+            self.available = self.initial_capital
 
     def can_afford(self, notional: float) -> bool:
         return self.available >= notional

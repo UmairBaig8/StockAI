@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import random
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -10,14 +11,21 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
-NSE_TICKERS = ["RELIANCE.NS", "TATAPOWER.NS", "HAL.NS", "BEL.NS", "SBIN.NS"]
+DEFAULT_TICKERS = ["RELIANCE.NS", "TATAPOWER.NS", "HAL.NS", "BEL.NS", "SBIN.NS"]
+
+def _load_tickers() -> list[str]:
+    raw = os.getenv("STRATEGY_TICKERS", "")
+    if raw:
+        tickers = [t.strip() for t in raw.split(",") if t.strip()]
+        if tickers:
+            return tickers
+    return DEFAULT_TICKERS
+
+NSE_TICKERS = _load_tickers()
 
 TICKER_MAP = {
-    "RELIANCE.NS": "RELIANCE",
-    "TATAPOWER.NS": "TATAPOWER",
-    "HAL.NS": "HAL",
-    "BEL.NS": "BEL",
-    "SBIN.NS": "SBIN",
+    t: t.replace(".NS", "").replace(".BO", "")
+    for t in NSE_TICKERS
 }
 
 

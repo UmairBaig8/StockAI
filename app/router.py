@@ -26,6 +26,7 @@ from .macro_analyst import MacroAnalyst
 from .vector_store import VectorStore
 from .wallet import wallet as wallet_instance
 from .market_data import MarketDataBridge
+from . import settings_store as settings_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -288,3 +289,16 @@ async def sentiment_analysis(request: dict, agent: SentimentAgent = Depends(get_
 @router.post("/macro", response_model=dict)
 async def macro_analysis(request: dict, agent: MacroAnalyst = Depends(get_macro)):
     return agent.analyze(context=request.get("context", ""))
+
+
+# === Settings ===
+
+@router.get("/settings", response_model=dict)
+async def get_settings():
+    return settings_store.current()
+
+
+@router.post("/settings", response_model=dict)
+async def save_settings(data: dict):
+    cfg = settings_store.save(data)
+    return {"ok": True, "settings": cfg}

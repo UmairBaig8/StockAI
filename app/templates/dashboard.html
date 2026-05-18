@@ -70,6 +70,16 @@
 
   .rules { font-size: 0.62rem; color: var(--accent); line-height: 1.6; }
   .rules div { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Compact strips */
+  .strip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 12px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.62rem; }
+  .strip .tag { padding: 2px 6px; border-radius: 3px; font-size: 0.58rem; }
+  .tag.bullish { background: #0a3a1a; color: var(--accent); }
+  .tag.bearish { background: #3a0a0a; color: var(--err); }
+  .tag.neutral { background: var(--input-bg); color: var(--muted); }
+  .strip .ticker-scroll { overflow: hidden; white-space: nowrap; flex: 1; min-width: 0; }
+  .strip .ticker-scroll span { margin-right: 16px; }
+  .strip a { color: var(--accent); text-decoration: none; font-size: 0.58rem; }
   .footer { text-align: center; font-size: 0.6rem; color: var(--muted); margin-top: 16px; grid-column: 1/-1; }
   .refresh { font-size: 0.6rem; color: var(--muted); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
@@ -151,6 +161,22 @@
       </header>
 
       <div class="grid">
+        <!-- News Ticker -->
+        <div class="card wide" style="padding:8px 12px">
+          <div class="strip" id="news-strip" style="background:transparent;border:none;padding:0;margin:0">
+            <span style="color:var(--muted)">📰</span>
+            <span class="ticker-scroll" id="news-ticker">Loading news...</span>
+            <a href="#" onclick="event.preventDefault();fetchNews()">Refresh</a>
+          </div>
+        </div>
+
+        <!-- Options PCR Strip -->
+        <div class="card wide" style="padding:8px 12px;font-size:0.62rem">
+          <span style="color:var(--muted)">Options PCR:</span>
+          <span id="pcr-strip" style="margin:0 6px">--</span>
+          <span id="pcr-tickers" style="color:var(--muted)"></span>
+        </div>
+
         <!-- Market -->
         <div class="card wide">
           <h2>Live Market (NSE via yfinance)</h2>
@@ -326,6 +352,34 @@ async function pollDash(){
 
 setInterval(pollDash, 2000);
 pollDash();
+
+// ── News Ticker ──
+async function fetchNews(){
+    try{
+        const r = await fetch('/api/v1/news');
+        const d = await r.json();
+        if(d.items?.length){
+            const lines = d.items.slice(0,8).map(i => i.title).join('  ·  ');
+            $('news-ticker').textContent = lines;
+        }
+    }catch(e){}
+}
+setInterval(fetchNews, 60000);
+fetchNews();
+
+// ── Options PCR ──
+async function fetchPCR(){
+    try{
+        const r = await fetch('/api/v1/options/RELIANCE');
+        const d = await r.json();
+        const pcr = d.market_pcr?.pcr || d.pcr;
+        const sent = d.market_pcr?.sentiment || d.sentiment || 'neutral';
+        $('pcr-strip').innerHTML = `<span class=\"tag ${sent}\">${sent.toUpperCase()} (PCR: ${pcr||'--'})</span>`;
+        if(d.unusual_activity?.length) $('pcr-tickers').textContent = `· ${d.unusual_activity.length} unusual strikes`;
+    }catch(e){}
+}
+setInterval(fetchPCR, 120000);
+fetchPCR();
 </script>
 </body>
 </html>

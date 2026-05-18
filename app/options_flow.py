@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-import yfinance as yf
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -13,81 +13,108 @@ _latest_oi: dict[str, dict] = {}
 _latest_pcr: float | None = None
 _last_update: datetime | None = None
 
+# NSE symbol mapping (yfinance format → NSE format)
+NSE_SYMBOL_MAP = {
+    "RELIANCE.NS": "RELIANCE", "RELIANCE": "RELIANCE",
+    "TCS.NS": "TCS", "TCS": "TCS",
+    "INFY.NS": "INFY", "INFY": "INFY",
+    "HDFCBANK.NS": "HDFCBANK", "HDFCBANK": "HDFCBANK",
+    "ITC.NS": "ITC", "ITC": "ITC",
+    "SBIN.NS": "SBIN", "SBIN": "SBIN",
+    "ICICIBANK.NS": "ICICIBANK", "ICICIBANK": "ICICIBANK",
+    "BHARTIARTL.NS": "BHARTIARTL", "BHARTIARTL": "BHARTIARTL",
+    "HINDUNILVR.NS": "HINDUNILVR", "HINDUNILVR": "HINDUNILVR",
+    "MARUTI.NS": "MARUTI", "MARUTI": "MARUTI",
+}
 
-async def scan_ticker_options(ticker: str) -> Optional[dict]:
-    """Scan options chain for unusual activity on a ticker."""
+
+def _nse_symbol(ticker: str) -> str:
+    return NSE_SYMBOL_MAP.get(ticker.upper(), ticker.upper().replace(".NS", "").replace(".BO", ""))
+
+
+async def scan_ticker_options(ticker: str, client: httpx.AsyncClient | None = None) -> Optional[dict]:
+async def scan_ticker_options(ticker: str, client: httpx.AsyncClient | None = None) -> Optional[dict]:
+    """Scan NSE options chain for unusual activity on a ticker."""
     global _latest_oi
+    sym = _nse_symbol(ticker)
+
+    should_close = client is None
+    if client is None:
+        client = httpx.AsyncClient(timeout=15, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        })
+
     try:
-        yt = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
-        stock = yf.Ticker(yt)
-
-        # Get nearest expiration
-        expirations = stock.options
-        if not expirations:
+        # NSE options chain API
+        url = f"https://www.nseindia.com/api/option-chain-equities?symbol={sym}"
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            logger.warning(f"NSE options API returned {resp.status_code} for {sym}")
             return None
 
-        expiry = expirations[0]
-        chain = stock.option_chain(expiry)
+        data = resp.json()
+        records = data.get("records", {})
+        underlying = records.get("underlyingValue", 0)
+        atm_strike = round(underlying / 10) * 10 if underlying else 0
+        expiry_dates = records.get("expiryDates", [])
+        current_expiry = expiry_dates[0] if expiry_dates else None
 
-        calls = chain.calls
-        puts = chain.puts
+        # Aggregate call/put data
+        total_call_oi = 0
+        total_put_oi = 0
+        total_call_vol = 0
+        total_put_vol = 0
+        unusual = []
 
-        if calls.empty or puts.empty:
-            return None
+        filtered = records.get("data", [])
+        for strike_data in filtered:
+            ce = strike_data.get("CE", {})
+            pe = strike_data.get("PE", {})
 
-        # Total OI and volume
-        total_call_oi = calls["openInterest"].sum() if "openInterest" in calls.columns else 0
-        total_put_oi = puts["openInterest"].sum() if "openInterest" in puts.columns else 0
-        total_call_vol = calls["volume"].sum() if "volume" in calls.columns else 0
-        total_put_vol = puts["volume"].sum() if "volume" in puts.columns else 0
+            if ce:
+                call_oi = ce.get("openInterest", 0) or 0
+                call_vol = ce.get("totalTradedVolume", 0) or 0
+                total_call_oi += call_oi
+                total_call_vol += call_vol
+                if call_oi > 0 and call_vol > call_oi * 1.5:
+                    unusual.append({
+                        "type": "CALL", "strike": ce.get("strikePrice", 0),
+                        "volume": call_vol, "oi": call_oi,
+                        "ratio": round(call_vol / call_oi, 1),
+                        "signal": "bullish" if ce.get("strikePrice", 0) > atm_strike else "ATM/bullish",
+                    })
 
-        # PCR (Put-Call Ratio) from OI
+            if pe:
+                put_oi = pe.get("openInterest", 0) or 0
+                put_vol = pe.get("totalTradedVolume", 0) or 0
+                total_put_oi += put_oi
+                total_put_vol += put_vol
+                if put_oi > 0 and put_vol > put_oi * 1.5:
+                    unusual.append({
+                        "type": "PUT", "strike": pe.get("strikePrice", 0),
+                        "volume": put_vol, "oi": put_oi,
+                        "ratio": round(put_vol / put_oi, 1),
+                        "signal": "bearish" if pe.get("strikePrice", 0) < atm_strike else "ATM/hedge",
+                    })
+
         pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 0
 
-        # Detect unusual activity: volume > 2x OI (intraday churn)
-        unusual = []
-        atm_price = stock.info.get("currentPrice", stock.info.get("regularMarketPrice", 0))
-        atm_strike = round(atm_price / 10) * 10 if atm_price else 0
-
-        for _, row in calls.iterrows():
-            vol = row.get("volume", 0) or 0
-            oi = row.get("openInterest", 0) or 0
-            if oi > 0 and vol > oi * 2:
-                strike = row.get("strike", 0)
-                unusual.append({
-                    "type": "CALL",
-                    "strike": strike,
-                    "volume": int(vol),
-                    "oi": int(oi),
-                    "ratio": round(vol / oi, 1),
-                    "signal": "bullish" if strike > atm_strike else "ATM/mild_bullish",
-                })
-
-        for _, row in puts.iterrows():
-            vol = row.get("volume", 0) or 0
-            oi = row.get("openInterest", 0) or 0
-            if oi > 0 and vol > oi * 2:
-                strike = row.get("strike", 0)
-                unusual.append({
-                    "type": "PUT",
-                    "strike": strike,
-                    "volume": int(vol),
-                    "oi": int(oi),
-                    "ratio": round(vol / oi, 1),
-                    "signal": "bearish" if strike < atm_strike else "ATM/hedge",
-                })
+        # PCR sentiment: <0.7 bullish, >1.3 bearish
+        sentiment = "bullish" if pcr < 0.7 else "bearish" if pcr > 1.3 else "neutral"
 
         result = {
             "ticker": ticker,
-            "expiry": expiry,
+            "expiry": current_expiry,
             "pcr": round(pcr, 2),
-            "call_oi": int(total_call_oi),
-            "put_oi": int(total_put_oi),
-            "call_volume": int(total_call_vol),
-            "put_volume": int(total_put_vol),
+            "call_oi": total_call_oi,
+            "put_oi": total_put_oi,
+            "call_volume": total_call_vol,
+            "put_volume": total_put_vol,
             "atm_strike": atm_strike,
-            "unusual_activity": unusual,
-            "sentiment": "bullish" if pcr < 0.7 else "bearish" if pcr > 1.3 else "neutral",
+            "underlying": underlying,
+            "unusual_activity": unusual[:10],
+            "sentiment": sentiment,
             "timestamp": datetime.now(IST).isoformat(),
         }
 
@@ -97,6 +124,9 @@ async def scan_ticker_options(ticker: str) -> Optional[dict]:
     except Exception as e:
         logger.warning(f"Options scan failed for {ticker}: {e}")
         return None
+    finally:
+        if should_close:
+            await client.aclose()
 
 
 async def scan_nifty_pcr() -> Optional[dict]:
@@ -129,22 +159,18 @@ def get_market_pcr() -> dict:
     }
 
 
-async def options_poller(interval: int = 900):
+async def options_poller(interval: int = 1800):
     """Background task that scans options periodically."""
     logger.info(f"Options flow scanner started (interval={interval}s)")
-    tickers = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ITC.NS"]
-    while True:
-        for ticker in tickers:
-            try:
-                result = await scan_ticker_options(ticker)
-                if result and result["unusual_activity"]:
-                    logger.info(f"Unusual options in {ticker}: {len(result['unusual_activity'])} strikes")
-            except Exception as e:
-                logger.error(f"Options poller error for {ticker}: {e}")
-            await asyncio.sleep(5)  # Rate limit
-        # Scan NIFTY PCR
-        try:
-            await scan_nifty_pcr()
-        except Exception:
-            pass
-        await asyncio.sleep(interval)
+    tickers = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ITC"]
+    async with httpx.AsyncClient(timeout=15, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}) as client:
+        while True:
+            for ticker in tickers:
+                try:
+                    result = await scan_ticker_options(ticker, client)
+                    if result and result["unusual_activity"]:
+                        logger.info(f"Unusual options in {ticker}: {len(result['unusual_activity'])} strikes, PCR={result['pcr']}")
+                except Exception as e:
+                    logger.error(f"Options poller error for {ticker}: {e}")
+                await asyncio.sleep(3)
+            await asyncio.sleep(interval)

@@ -33,7 +33,6 @@ def _nse_symbol(ticker: str) -> str:
 
 
 async def scan_ticker_options(ticker: str, client: httpx.AsyncClient | None = None) -> Optional[dict]:
-async def scan_ticker_options(ticker: str, client: httpx.AsyncClient | None = None) -> Optional[dict]:
     """Scan NSE options chain for unusual activity on a ticker."""
     global _latest_oi
     sym = _nse_symbol(ticker)

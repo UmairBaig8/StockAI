@@ -95,6 +95,10 @@ def create_app() -> FastAPI:
     async def backtest_page():
         return (Path(__file__).parent / "templates" / "backtest.html").read_text()
 
+    @app.get("/llm", response_class=HTMLResponse)
+    async def llm_page():
+        return (Path(__file__).parent / "templates" / "llm.html").read_text()
+
     @app.get("/base.css", response_class=Response)
     async def base_css():
         css = (Path(__file__).parent / "templates" / "base.css").read_text()

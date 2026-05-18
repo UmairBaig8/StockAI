@@ -29,6 +29,7 @@ from .wallet import wallet as wallet_instance
 from .market_data import MarketDataBridge
 from . import settings_store as settings_store
 from . import news_scraper as news_scraper
+from .llm.providers import check_llm_health, get_available_providers, get_active_provider
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -346,6 +347,16 @@ async def get_news(ticker: str = ""):
 async def refresh_news():
     items = await news_scraper.fetch_all_news()
     return {"count": len(items), "items": items[:5]}
+
+
+# === LLM Health ===
+
+@router.get("/llm/check", response_model=dict)
+async def llm_health():
+    health = check_llm_health()
+    available = get_available_providers()
+    active = get_active_provider()
+    return {"providers": health, "available": available, "active": active, "total_configured": len(available)}
 
 
 # === History (PostgreSQL) ===

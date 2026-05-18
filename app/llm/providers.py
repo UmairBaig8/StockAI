@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -238,3 +239,33 @@ def create_llm_for_agent(settings, agent: str) -> LLMAdapter:
         return OllamaAdapter(base_url=settings.ollama_base_url, model=settings.ollama_model)
 
     raise ValueError(f"Unknown LLM provider: {provider}")
+
+
+# ── LLM Health Check ──
+
+ALL_PROVIDERS = ["openai", "deepseek", "gemini", "anthropic", "bedrock", "ollama"]
+PROVIDER_LABELS = {"openai":"OpenAI","deepseek":"DeepSeek","gemini":"Gemini","anthropic":"Anthropic","bedrock":"AWS Bedrock","ollama":"Ollama"}
+PROVIDER_ENV_KEYS = {"openai":"MEMORY_OPENAI_API_KEY","deepseek":"MEMORY_DEEPSEEK_API_KEY","gemini":"MEMORY_GEMINI_API_KEY","anthropic":"MEMORY_ANTHROPIC_API_KEY","bedrock":"MEMORY_AWS_ACCESS_KEY_ID","ollama":"MEMORY_OLLAMA_BASE_URL"}
+PROVIDER_DEFAULT_MODEL = {"openai":"gpt-4o-mini","deepseek":"deepseek-chat","gemini":"gemini-2.5-flash","anthropic":"claude-sonnet-4-20250514","bedrock":"us.anthropic.claude-sonnet-4-20250514-v1:0","ollama":"llama3.1"}
+
+
+def check_llm_health() -> dict:
+    results = {}
+    for provider in ALL_PROVIDERS:
+        key = os.getenv(PROVIDER_ENV_KEYS.get(provider, ""), "")
+        configured = bool(key and key.strip() and len(key) > 10)
+        results[provider] = {
+            "label": PROVIDER_LABELS.get(provider, provider),
+            "configured": configured,
+            "model": os.getenv(f"MEMORY_{provider.upper()}_MODEL", "") or PROVIDER_DEFAULT_MODEL.get(provider, ""),
+            "default": os.getenv("MEMORY_LLM_PROVIDER", "deepseek") == provider,
+        }
+    return results
+
+
+def get_available_providers() -> list[str]:
+    return [p for p, h in check_llm_health().items() if h["configured"]]
+
+
+def get_active_provider() -> str:
+    return os.getenv("MEMORY_LLM_PROVIDER", "deepseek")

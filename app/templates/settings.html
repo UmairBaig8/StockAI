@@ -36,7 +36,7 @@
   .sidebar a, .sidebar span {
     display: block; padding: 10px 14px; border-radius: var(--radius);
     color: var(--muted); text-decoration: none; font-size: 0.9rem;
-    transition: background 0.15s;
+    min-height: 44px; display: flex; align-items: center; /* 44px tap */
   }
   .sidebar a:hover, .sidebar a.active { background: var(--input-bg); color: var(--text); }
   .sidebar .brand { font-weight: 700; color: var(--accent); font-size: 1.05rem; margin-bottom: 12px; }
@@ -77,6 +77,18 @@
   .toast.error { background: var(--danger); color: #fff; }
   @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   [role="status"] { font-size: 0.85rem; color: var(--muted); }
+  .mobile-nav {
+    display: none;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 8px 12px; gap: 8px; flex-wrap: wrap;
+  }
+  .mobile-nav a {
+    color: var(--muted); text-decoration: none; font-size: 0.8rem;
+    padding: 8px 14px; border-radius: var(--radius); min-height: 44px;
+    display: inline-flex; align-items: center;
+  }
+  .mobile-nav a.active { background: var(--bg); color: var(--fg); }
+  @media (max-width: 768px) { .mobile-nav { display: flex !important; } }
 </style>
 </head>
 <body>
@@ -89,6 +101,13 @@
     <a href="/settings" class="active" aria-current="page">Settings</a>
     <a href="http://3.85.55.232:8080" rel="noopener">2FA Relay</a>
   </nav>
+
+  <div>
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <a href="/">Dashboard</a>
+      <a href="/settings" class="active" aria-current="page">Settings</a>
+      <a href="http://3.85.55.232:8080" rel="noopener">2FA</a>
+    </nav>
 
   <main class="main" id="main-content">
     <h1>Settings</h1>
@@ -201,7 +220,8 @@
       <span id="save-status" role="status"></span>
     </div>
   </main>
-</div>
+  </div><!-- close mobile-wrapper -->
+</div><!-- close layout -->
 
 <div id="toast" class="toast success" style="display:none" role="alert" aria-live="polite"></div>
 

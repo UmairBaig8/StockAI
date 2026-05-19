@@ -37,7 +37,7 @@ async function runBacktest(){
   try{const r=await fetch('/api/v1/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();
     if(d.error){document.getElementById('results').innerHTML='<div class="loading">'+d.error+'</div>';return}
     const s=d.summary;const params=d.params;
-    const eq=d.equity_curve||(d.ticker_results&&d.ticker_results[0]?d.ticker_results[0].equity_curve:null);
+    const eq=d.equity_curve;
     const equityHtml=eq&&eq.length>1?renderEquityChart(eq,s.cagr||0,s.max_drawdown_pct||0):'';
     document.getElementById('results').innerHTML=`
       <div class="card"><h3>${params.tickers.join(', ')} · ${params.period} · ${params.interval}</h3>

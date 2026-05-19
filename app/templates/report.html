@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockAI — Daily Report</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  .main{max-width:900px}
+  .report-header{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .report-card{flex:1;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center}
+  .report-card .val{font-size:1.5rem;font-weight:700}
+  .report-card .val.green{color:var(--accent)}.report-card .val.red{color:var(--err)}
+  .report-card .lbl{font-size:0.6rem;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:0.5px}
+  .equity-bar{display:flex;align-items:flex-end;gap:2px;height:120px;margin:12px 0;padding:4px;background:var(--bg);border-radius:var(--radius);overflow-x:auto}
+  .equity-bar .bar{flex:1;min-width:8px;background:var(--accent);border-radius:2px;position:relative;transition:opacity 0.2s;min-height:2px}
+  .equity-bar .bar.loss{background:var(--err)}
+  .equity-bar .bar:hover{opacity:0.7}
+  .day-row{cursor:pointer;transition:background 0.15s}
+  .day-row:hover{background:var(--surface)}
+  .day-row.expanded{background:var(--surface)}
+  .day-detail{display:none;font-size:0.6rem;color:var(--muted);padding:6px 12px 10px;background:var(--bg)}
+  .day-detail.visible{display:block}
+  .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px}
+  .metric-item{background:var(--surface);padding:8px;border-radius:4px;text-align:center}
+  .metric-item .mv{font-size:0.9rem;font-weight:600}
+  .metric-item .ml{font-size:0.5rem;color:var(--muted)}
+  .bar-label{font-size:0.45rem;color:var(--muted);text-align:center;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table{width:100%;font-size:0.65rem;border-collapse:collapse}
+  th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500;font-size:0.6rem;text-transform:uppercase}
+  td{padding:5px 8px;border-bottom:1px solid color-mix(in srgb,var(--border) 30%,transparent)}
+  .tag{font-size:0.5rem;padding:1px 5px;border-radius:3px;font-weight:600}
+  .tag.green{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent)}
+  .tag.red{background:color-mix(in srgb,var(--err) 20%,transparent);color:var(--err)}
+</style>
+</head>
+<body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<div class="layout">
+  <nav class="sidebar">
+    <span class="brand">StockAI</span>
+    <a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a>
+    <a href="/backtest">Backtest</a><a href="/history">History</a>
+    <a href="/report" class="active" aria-current="page">Report</a>
+    <a href="/settings">Settings</a><a href="/llm">LLM</a>
+  </nav>
+  <div>
+    <nav class="mobile-nav"><a href="/">Cockpit</a><a href="/history">History</a><a href="/report" class="active">Report</a><a href="/llm">LLM</a></nav>
+    <main class="main" id="main-content">
+      <h1>Daily Performance Report <span id="report-range"></span></h1>
+      <div class="report-header" id="today-cards">Loading...</div>
+      <div id="equity-section">
+        <h3 style="font-size:0.8rem">Equity Curve <span style="font-weight:400;color:var(--muted);font-size:0.6rem">(daily P&L bars)</span></h3>
+        <div class="equity-bar" id="equity-chart"></div>
+      </div>
+      <h3 style="font-size:0.8rem">Daily History</h3>
+      <table>
+        <thead><tr><th>Date</th><th>Trades</th><th>W / L</th><th>Win Rate</th><th>P&L</th><th>Best</th><th>Worst</th><th>Avg Win / Loss</th><th>PF</th></tr></thead>
+        <tbody id="daily-body"><tr><td colspan="9" style="color:var(--muted)">Loading...</td></tr></tbody>
+      </table>
+    </main>
+  </div>
+</div>
+<script>
+let reportData=null;
+
+async function load(){
+  try{
+    const r=await fetch('/api/v1/report/daily?days=30');
+    reportData=await r.json();
+    renderToday();
+    renderEquity();
+    renderDaily();
+  }catch(e){document.getElementById('today-cards').innerHTML='<span style="color:var(--err)">Failed to load report</span>'}
+}
+
+function renderToday(){
+  const d=reportData;
+  document.getElementById('report-range').innerHTML='last 30 days';
+
+  const today=d.today||{};
+  const hasToday=today.date;
+  document.getElementById('today-cards').innerHTML=`
+    <div class="report-card"><div class="val">₹${d.current_equity.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="lbl">Current Equity</div></div>
+    <div class="report-card"><div class="val ${d.current_pnl>=0?'green':'red'}">${d.current_pnl>=0?'+':''}₹${d.current_pnl.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="lbl">Total P&L (${d.current_pnl_pct.toFixed(2)}%)</div></div>
+    ${hasToday?`
+    <div class="report-card"><div class="val">${today.total_trades}</div><div class="lbl">Today's Trades</div></div>
+    <div class="report-card"><div class="val ${today.pnl>=0?'green':'red'}">${today.pnl>=0?'+':''}₹${today.pnl.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="lbl">Today's P&L</div></div>
+    <div class="report-card"><div class="val">${today.win_rate}%</div><div class="lbl">Today Win Rate</div></div>
+    `:`
+    <div class="report-card"><div class="val" style="color:var(--muted)">-</div><div class="lbl">No trades today</div></div>`}
+    <div class="report-card"><div class="val">${d.overall.total_trades}</div><div class="lbl">All-Time Trades</div></div>
+    <div class="report-card"><div class="val">${d.overall.win_rate}%</div><div class="lbl">All-Time Win Rate</div></div>
+  `;
+}
+
+function renderEquity(){
+  const curve=reportData.equity_curve||[];
+  const maxAbs=Math.max(...curve.map(c=>Math.abs(c.daily_pnl)),1);
+  document.getElementById('equity-chart').innerHTML=curve.map(c=>{
+    const h=Math.max(2,(Math.abs(c.daily_pnl)/maxAbs)*110);
+    const cls=c.daily_pnl>=0?'':' loss';
+    return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:10px">
+      <div class="bar${cls}" style="height:${h}px" title="${c.date}: ${c.daily_pnl>=0?'+':''}₹${c.daily_pnl.toLocaleString('en-IN',{maximumFractionDigits:0})} | Equity: ₹${c.equity.toLocaleString('en-IN',{maximumFractionDigits:0})}"></div>
+      <span class="bar-label">${c.date.slice(5)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderDaily(){
+  const history=reportData.daily_history||[];
+  document.getElementById('daily-body').innerHTML=history.map((d,i)=>{
+    const pfColor=d.profit_factor>=1.5?'var(--accent)':d.profit_factor>=1?'var(--muted)':'var(--err)';
+    return `<tr class="day-row" onclick="toggleDay(${i})" title="Click for details">
+      <td>${d.date}</td>
+      <td>${d.total_trades}</td>
+      <td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td>
+      <td>${d.win_rate}%</td>
+      <td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${d.pnl.toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
+      <td style="color:var(--accent)">${d.best_pnl>0?'+':''}${d.best_pnl}%</td>
+      <td style="color:var(--err)">${d.worst_pnl}%</td>
+      <td><span style="color:var(--accent)">+${d.avg_win}%</span> / <span style="color:var(--err)">${d.avg_loss}%</span></td>
+      <td style="color:${pfColor}">${d.profit_factor}</td>
+    </tr>
+    <tr id="day-detail-${i}" class="day-detail"><td colspan="9">
+      <div class="metric-grid">
+        <div class="metric-item"><div class="mv">₹${d.volume.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="ml">Volume</div></div>
+        <div class="metric-item"><div class="mv">${d.profit_factor}</div><div class="ml">Profit Factor</div></div>
+        <div class="metric-item"><div class="mv">+${d.avg_win}%</div><div class="ml">Avg Win</div></div>
+        <div class="metric-item"><div class="mv">${d.avg_loss}%</div><div class="ml">Avg Loss</div></div>
+        <div class="metric-item" style="grid-column:span 2"><div class="mv" style="font-size:0.7rem">${d.tickers}</div><div class="ml">Tickers Traded</div></div>
+      </div>
+    </td></tr>`;
+  }).join('');
+}
+
+function toggleDay(i){
+  const el=document.getElementById('day-detail-'+i);
+  if(el)el.classList.toggle('visible');
+}
+
+load();
+setInterval(load,60000);
+</script>
+</body>
+</html>

@@ -179,3 +179,90 @@ async def close_pool():
     if _pool:
         await _pool.close()
         _pool = None
+
+
+# ── Daily report ──
+
+async def get_daily_summaries(days: int = 30) -> list[dict]:
+    """Group trades by IST date, return daily performance summaries."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT
+                DATE(timestamp AT TIME ZONE 'Asia/Kolkata') as trade_date,
+                COUNT(*) as total_trades,
+                COUNT(*) FILTER (WHERE pnl_percent > 0) as wins,
+                COUNT(*) FILTER (WHERE pnl_percent < 0) as losses,
+                COALESCE(SUM(pnl_percent * entry_price * quantity / 100), 0) as total_pnl,
+                COALESCE(SUM(entry_price * quantity), 0) as total_volume,
+                MAX(pnl_percent) as best_pnl,
+                MIN(pnl_percent) as worst_pnl,
+                COALESCE(AVG(pnl_percent) FILTER (WHERE pnl_percent > 0), 0) as avg_win,
+                COALESCE(AVG(pnl_percent) FILTER (WHERE pnl_percent < 0), 0) as avg_loss,
+                STRING_AGG(DISTINCT ticker, ',' ORDER BY ticker) as tickers_traded
+            FROM trades
+            GROUP BY trade_date
+            ORDER BY trade_date DESC
+            LIMIT $1
+        """, days)
+        result = []
+        for r in rows:
+            total = r["total_trades"]
+            wins = r["wins"]
+            losses = r["losses"]
+            profit_factor = abs(0) if losses == 0 else (
+                abs(float(r["total_pnl"])) if losses == 0 else 0
+            )
+            # Profit factor = gross_profit / gross_loss
+            gross_profit_row = await conn.fetchrow(
+                "SELECT COALESCE(SUM(pnl_percent * entry_price * quantity / 100), 0) FROM trades "
+                "WHERE DATE(timestamp AT TIME ZONE 'Asia/Kolkata') = $1 AND pnl_percent > 0",
+                r["trade_date"],
+            )
+            gross_loss_row = await conn.fetchrow(
+                "SELECT COALESCE(SUM(pnl_percent * entry_price * quantity / 100), 0) FROM trades "
+                "WHERE DATE(timestamp AT TIME ZONE 'Asia/Kolkata') = $1 AND pnl_percent < 0",
+                r["trade_date"],
+            )
+            gross_profit = float(gross_profit_row[0]) if gross_profit_row else 0
+            gross_loss = float(gross_loss_row[0]) if gross_loss_row else 0
+            pf = abs(gross_profit / gross_loss) if gross_loss != 0 else (999 if gross_profit > 0 else 0)
+
+            result.append({
+                "date": str(r["trade_date"]),
+                "total_trades": total,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": round((wins / total * 100) if total > 0 else 0, 1),
+                "pnl": round(float(r["total_pnl"]), 2),
+                "volume": round(float(r["total_volume"]), 2),
+                "best_pnl": round(float(r["best_pnl"]), 2),
+                "worst_pnl": round(float(r["worst_pnl"]), 2),
+                "avg_win": round(float(r["avg_win"]), 2),
+                "avg_loss": round(float(r["avg_loss"]), 2),
+                "profit_factor": round(pf, 2),
+                "tickers": r["tickers_traded"] or "",
+            })
+        return result
+
+
+async def get_daily_equity_curve(days: int = 30) -> list[dict]:
+    """Cumulative P&L by day for equity curve chart."""
+    summaries = await get_daily_summaries(days)
+    summaries.reverse()  # chronological order
+    cumulative = 0.0
+    curve = []
+    # Find initial capital for baseline
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        w = await conn.fetchrow("SELECT initial_capital FROM wallet WHERE id = 1")
+        initial = float(w["initial_capital"]) if w else 100000.0
+    for s in summaries:
+        cumulative += s["pnl"]
+        curve.append({
+            "date": s["date"],
+            "daily_pnl": s["pnl"],
+            "cumulative_pnl": round(cumulative, 2),
+            "equity": round(initial + cumulative, 2),
+        })
+    return curve

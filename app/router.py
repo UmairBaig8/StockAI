@@ -404,6 +404,44 @@ async def trade_history(ticker: str = "", limit: int = 50):
     return {"trades": trades, "summary": summary, "ticker": ticker}
 
 
+# === Daily Report ===
+
+@router.get("/report/daily", response_model=dict)
+async def daily_report(days: int = 30):
+    from . import db as _db
+    from .wallet import wallet as w
+
+    summaries = await _db.get_daily_summaries(days)
+    equity = await _db.get_daily_equity_curve(days)
+
+    total_pnl = sum(s["pnl"] for s in summaries)
+    total_trades = sum(s["total_trades"] for s in summaries)
+    total_wins = sum(s["wins"] for s in summaries)
+    total_losses = sum(s["losses"] for s in summaries)
+
+    snap = w.snapshot()
+    today_summary = next((s for s in summaries if s["date"] == datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d")), None)
+
+    return {
+        "current_equity": snap["total_equity"],
+        "current_pnl": snap["total_pnl"],
+        "current_pnl_pct": snap["total_pnl_pct"],
+        "initial_capital": snap["initial_capital"],
+        "overall": {
+            "total_trades": total_trades,
+            "wins": total_wins,
+            "losses": total_losses,
+            "win_rate": round((total_wins / total_trades * 100) if total_trades > 0 else 0, 1),
+            "total_pnl": round(total_pnl, 2),
+            "best_day": max(summaries, key=lambda s: s["pnl"]) if summaries else None,
+            "worst_day": min(summaries, key=lambda s: s["pnl"]) if summaries else None,
+        },
+        "today": today_summary,
+        "daily_history": summaries,
+        "equity_curve": equity,
+    }
+
+
 # === Indicators (debug) ===
 
 @router.get("/indicators/{ticker}", response_model=dict)

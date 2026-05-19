@@ -1,14 +1,34 @@
 {% block content %}
+<style>
+  .backtest-intro{text-align:center;padding:32px 16px;color:var(--muted)}
+  .backtest-intro h3{font-size:0.9rem;color:var(--fg);margin-bottom:8px;text-transform:none}
+  .backtest-intro p{font-size:0.74rem;max-width:520px;margin:0 auto 6px;line-height:1.6}
+  .equity-chart-wrap{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:14px;padding:16px;margin:14px 0}
+  .equity-chart-wrap svg{width:100%;height:200px}
+  .chart-legend{display:flex;gap:16px;font-size:0.65rem;color:var(--muted);margin-bottom:8px}
+  .chart-legend span{display:flex;align-items:center;gap:5px}
+  .chart-legend .swatch{width:10px;height:10px;border-radius:2px}
+  .result-meta{display:flex;gap:6px;font-size:0.68rem;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+</style>
+
 <header>
   <h1>Backtest <span class="muted">simulate strategy on historical data</span></h1>
   <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-    <div><input type="text" id="tickers" value="RELIANCE.NS,TCS.NS,INFY.NS" style="width:200px" placeholder="Tickers"></div>
-    <div><select id="period"><option value="3mo">3m</option><option value="6mo" selected>6m</option><option value="1y">1y</option><option value="2y">2y</option></select></div>
-    <div><select id="interval"><option value="1h" selected>1h</option><option value="1d">1d</option><option value="15m">15m</option></select></div>
+    <input type="text" id="tickers" value="RELIANCE.NS,TCS.NS,INFY.NS" style="width:210px" placeholder="Tickers">
+    <select id="period"><option value="3mo">3 mo</option><option value="6mo" selected>6 mo</option><option value="1y">1 year</option><option value="2y">2 years</option></select>
+    <select id="interval"><option value="1h" selected>1 hour</option><option value="1d">1 day</option><option value="15m">15 min</option></select>
     <button onclick="runBacktest()">Run</button>
   </div>
 </header>
-<div id="results"><div class="loading">Configure parameters and run backtest to see results</div></div>
+
+<div id="results">
+  <div class="backtest-intro">
+    <h3>What is Backtesting?</h3>
+    <p>Backtesting replays your trading strategy against <b>historical price data</b> to see how it would have performed — without risking real money.</p>
+    <p>It buys when RSI drops below oversold thresholds, sells on take-profit or stop-loss, and tracks every trade. Metrics like <b>Sharpe ratio</b> (risk-adjusted return) and <b>max drawdown</b> (worst peak-to-trough loss) help you evaluate the strategy objectively.</p>
+    <p style="color:var(--accent);font-size:0.68rem;margin-top:8px">Pick tickers, period, and interval — then click Run.</p>
+  </div>
+</div>
 {% endblock %}
 <script>
 async function runBacktest(){
@@ -17,8 +37,10 @@ async function runBacktest(){
   try{const r=await fetch('/api/v1/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();
     if(d.error){document.getElementById('results').innerHTML='<div class="loading">'+d.error+'</div>';return}
     const s=d.summary;const params=d.params;
+    const eq=d.equity_curve||(d.ticker_results&&d.ticker_results[0]?d.ticker_results[0].equity_curve:null);
+    const equityHtml=eq&&eq.length>1?renderEquityChart(eq,s.cagr||0,s.max_drawdown_pct||0):'';
     document.getElementById('results').innerHTML=`
-      <div class="card"><h3>Results: ${params.tickers.join(', ')} | ${params.period} ${params.interval}</h3>
+      <div class="card"><h3>${params.tickers.join(', ')} · ${params.period} · ${params.interval}</h3>
         <div class="metric-row">
           <div class="metric"><span class="val">${s.total_trades}</span><span class="lbl">Trades</span></div>
           <div class="metric"><span class="val">${s.win_rate}%</span><span class="lbl">Win Rate</span></div>
@@ -29,11 +51,43 @@ async function runBacktest(){
           <div class="metric"><span class="val">₹${s.avg_win.toFixed(0)}</span><span class="lbl">Avg Win</span></div>
           <div class="metric"><span class="val">₹${s.avg_loss.toFixed(0)}</span><span class="lbl">Avg Loss</span></div>
           <div class="metric"><span class="val">${s.profit_factor}</span><span class="lbl">Profit Factor</span></div>
-        </div></div>
+        </div>
+      </div>
+      ${equityHtml}
       <div class="card"><h3>Recent Trades</h3>
         <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>P&L ₹</th></tr></thead>
         <tbody>${(d.recent_trades||[]).map(t=>`<tr><td>${(t.entry_time||'').slice(0,16)}</td><td>${t.ticker}</td><td>${t.dir}</td><td>${t.qty}</td><td>${t.entry}</td><td>${t.exit}</td><td style="color:${t.pnl_pct>0?'var(--accent)':'var(--err)'}">${(t.pnl_pct>0?'+':'')+t.pnl_pct}%</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">₹${t.pnl}</td></tr>`).join('')}</tbody></table></div>
       </div>`;
   }catch(e){document.getElementById('results').innerHTML='<div class="loading">Error: '+e.message+'</div>'}
+}
+
+function renderEquityChart(curve,cagr,dd){
+  const vals=curve;const len=vals.length;
+  if(len<2)return'';
+  const w=900,h=200,pad=20;
+  const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
+  const pts=vals.map((v,i)=>`${pad+(i/(len-1))*(w-pad*2)},${h-pad-((v-min)/range)*(h-pad*2)}`).join(' ');
+
+  const xLabels=[];
+  for(let i=0;i<len;i+=Math.max(1,Math.floor(len/6))){
+    xLabels.push(`<text x="${pad+(i/(len-1))*(w-pad*2)}" y="${h-2}" font-size="9" fill="var(--muted)" text-anchor="middle">${i}</text>`);
+  }
+
+  const startVal=vals[0],endVal=vals[len-1];
+  const pct=((endVal-startVal)/startVal*100).toFixed(1);
+  const color=pct>=0?'var(--accent)':'var(--err)';
+
+  return `<div class="equity-chart-wrap">
+    <div class="chart-legend">
+      <span><span class="swatch" style="background:${color}"></span>Equity &middot; ${pct>=0?'+':''}${pct}%</span>
+      <span style="margin-left:auto">Max DD: ${dd.toFixed(1)}% &middot; CAGR: ${cagr.toFixed(1)}%</span>
+    </div>
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
+      <polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${pts}"/>
+      <polygon points="${pts} ${pad+(len-1)/(len-1)*(w-pad*2)},${h-pad} ${pad},${h-pad}" fill="${color}" opacity="0.06"/>
+      ${xLabels.join('')}
+    </svg>
+    <div class="result-meta"><span>Start: ₹${startVal.toFixed(0)}</span><span>End: ₹${endVal.toFixed(0)}</span><span>Steps: ${len}</span></div>
+  </div>`;
 }
 </script>

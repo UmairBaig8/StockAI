@@ -9,11 +9,15 @@
   .param-group{display:flex;align-items:center;gap:6px}
   .param-group label{font-size:0.66rem;color:var(--muted);font-weight:700;margin:0;white-space:nowrap}
 
-  .equity-chart-wrap{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:14px;padding:18px;margin-bottom:14px;width:100%}
-  .equity-chart-wrap svg{width:100%;height:220px}
-  .chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-  .chart-title{font-size:0.82rem;font-weight:700;color:var(--fg);letter-spacing:-0.02em}
-  .chart-stats{display:flex;gap:18px;font-size:0.64rem;color:var(--muted)}
+  .equity-chart-wrap{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:14px;padding:14px 18px 18px;margin-bottom:14px;width:100%}
+  .equity-chart-wrap svg{width:100%;height:210px}
+  .chart-summary{display:flex;gap:20px;align-items:baseline;margin-bottom:8px;flex-wrap:wrap}
+  .chart-summary .ticker-label{font-size:0.82rem;font-weight:700;color:var(--fg);letter-spacing:-0.02em}
+  .chart-summary .equity-change{font-size:1.15rem;font-weight:800;letter-spacing:-0.03em}
+  .chart-summary .equity-range{display:flex;gap:14px;font-size:0.66rem;color:var(--muted)}
+  .chart-summary .equity-range strong{color:var(--fg);font-weight:700}
+  .chart-grid{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+  .chart-grid .stat{flex:1;min-width:100px}
 
   .perf-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px}
 
@@ -138,7 +142,8 @@ function renderChart(ticker,vals){
   const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
   const startVal=vals[0],endVal=vals[len-1];
   const pct=((endVal-startVal)/startVal*100).toFixed(1);
-  const color=pct>=0?'#00ff88':'#ff4d5e';
+  const colorHex=pct>=0?'#00ff88':'#ff4d5e';
+  const colorVar=pct>=0?'var(--accent)':'var(--err)';
 
   const pts=vals.map((v,i)=>`${ml+(i/(len-1))*pw},${mt+ph-((v-min)/range)*ph}`).join(' ');
   const areaPts=pts+` ${ml+pw},${mt+ph} ${ml},${mt+ph}`;
@@ -151,18 +156,19 @@ function renderChart(ticker,vals){
   }
 
   const endX=ml+pw,endY=mt+ph-((endVal-min)/range)*ph;
-  const dot=`<circle cx="${endX}" cy="${endY}" r="5" fill="${color}" stroke="var(--bg)" stroke-width="2"/>`;
-  const label=`<text x="${endX+10}" y="${endY+5}" fill="${color}" font-size="12" font-weight="700">${pct>=0?'+':''}${pct}%</text>`;
+  const dot=`<circle cx="${endX}" cy="${endY}" r="5" fill="${colorHex}" stroke="var(--bg)" stroke-width="2"/>`;
+  const label=`<text x="${endX+10}" y="${endY+5}" fill="${colorHex}" font-size="12" font-weight="700">${pct>=0?'+':''}${pct}%</text>`;
 
   return `<div class="equity-chart-wrap">
-    <div class="chart-header">
-      <span class="chart-title">${ticker.replace('.NS','')} &middot; Equity Curve</span>
-      <span class="chart-stats"><span>Start ₹${startVal.toFixed(0)}</span><span>End ₹${endVal.toFixed(0)}</span><span style="color:${color}">${pct>=0?'+':''}${pct}%</span></span>
+    <div class="chart-summary">
+      <span class="ticker-label">${ticker.replace('.NS','')}</span>
+      <span class="equity-change" style="color:${colorVar}">${pct>=0?'+':''}${pct}%</span>
+      <span class="equity-range"><span>Start <strong>₹${startVal.toFixed(0)}</strong></span><span>&rarr; <strong>₹${endVal.toFixed(0)}</strong></span></span>
     </div>
     <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
       ${grid}
-      <polygon points="${areaPts}" fill="${color}" opacity="0.08"/>
-      <polyline fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" points="${pts}"/>
+      <polygon points="${areaPts}" fill="${colorHex}" opacity="0.08"/>
+      <polyline fill="none" stroke="${colorHex}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" points="${pts}"/>
       ${dot}${label}
     </svg>
   </div>`;

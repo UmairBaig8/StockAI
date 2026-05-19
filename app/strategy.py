@@ -115,9 +115,9 @@ class StrategyAgent:
             if today_key != self._daily_loss_date:
                 self._daily_loss = 0.0
                 self._daily_loss_date = today_key
-                self._daily_start_equity = wallet_instance.total_equity
+                self._daily_start_equity = wallet_instance.total_equity()
 
-            current_equity = wallet_instance.total_equity
+            current_equity = wallet_instance.total_equity()
             if hasattr(self, '_daily_start_equity') and current_equity > 0:
                 daily_pnl = current_equity - self._daily_start_equity
                 if daily_pnl < 0 and abs(daily_pnl) / self._daily_start_equity * 100 >= self.daily_loss_limit_pct:

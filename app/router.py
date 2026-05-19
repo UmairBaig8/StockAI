@@ -135,6 +135,7 @@ async def research_batch(
 
 @router.get("/dash", response_model=DashResponse)
 async def dash(store: VectorStore = Depends(get_store), settings: Settings = Depends(get_settings)):
+    from .db import get_summary, get_pool
     snap = event_store.snapshot()
     trades = snap["trades"]
 
@@ -144,6 +145,22 @@ async def dash(store: VectorStore = Depends(get_store), settings: Settings = Dep
     wins = sum(1 for t in trades if t.pnl > 0)
     losses = sum(1 for t in trades if t.pnl <= 0)
     total = len(trades)
+
+    # Merge with real DB data if in-memory is empty
+    if total == 0:
+        try:
+            db_summary = await get_summary()
+            total = db_summary.get("total_trades", 0)
+            wins = db_summary.get("wins", 0)
+            losses = db_summary.get("losses", 0)
+            total_pnl_amount = db_summary.get("pnl", 0)
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT COALESCE(SUM(entry_price * quantity), 0) as invested FROM trades")
+                total_invested = float(row["invested"]) if row else 0
+            total_pnl_pct = (total_pnl_amount / total_invested * 100) if total_invested > 0 else 0
+        except Exception:
+            pass
 
     summary = DashSummary(
         invested=total_invested,

@@ -303,7 +303,7 @@ class BacktestEngine:
                 "avg_loss": round(avg_loss, 2),
                 "profit_factor": round(profit_factor, 2),
             },
-            "equity_curve": equity_curves[0] if equity_curves else [],
+            "equity_curves": {r["ticker"]: r["equity_curve"] for r in results if r.get("equity_curve")},
             "ticker_results": results,
             "tickers_tested": [r["ticker"] for r in results],
             "recent_trades": [

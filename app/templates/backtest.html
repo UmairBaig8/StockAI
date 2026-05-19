@@ -64,8 +64,13 @@ async function loadTickers(){
     const cls=src==='history'?'from-history':'';
     return `<span class="ticker-chip ${cls}${s?' selected':''}" onclick="toggle('${tk}')">${tk.replace('.NS','')}</span>`;
   }).join('');
+  if(tickers.size>0)runBacktest();
 }
-function toggle(tk){selected.has(tk)?selected.delete(tk):selected.add(tk);renderChipsS()}
+function toggle(tk){
+  selected.has(tk)?selected.delete(tk):selected.add(tk);
+  renderChipsS();
+  if(window._hasRun)scheduleRun();
+}
 function renderChipsS(){
   document.querySelectorAll('.ticker-chip').forEach(c=>{
     const tk=c.textContent.replace('hist','')+'.NS';
@@ -73,10 +78,16 @@ function renderChipsS(){
   });
 }
 function getSelected(){return[...selected].join(', ')}
+let _debounce=null;
+function scheduleRun(){
+  clearTimeout(_debounce);
+  _debounce=setTimeout(runBacktest,600);
+}
 
 async function runBacktest(){
   const tickers=getSelected();
   if(!tickers){alert('Select at least one ticker');return}
+  window._hasRun=true;
   const period=document.getElementById('period').value;
   const interval=document.getElementById('interval').value;
   document.getElementById('results').innerHTML='<div class="loading">Running backtest on '+tickers.split(',').length+' tickers... (may take 30-60s)</div>';

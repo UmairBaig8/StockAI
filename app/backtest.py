@@ -313,7 +313,7 @@ class BacktestEngine:
                     "pnl_pct": round(t.pnl_pct, 2), "pnl": round(t.pnl, 2),
                     "entry_time": t.entry_time.isoformat() if hasattr(t.entry_time, 'isoformat') else str(t.entry_time),
                 }
-                for t in trades[-10:]
+                for t in trades[-50:]
             ],
         }
 

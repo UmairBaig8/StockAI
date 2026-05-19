@@ -1,11 +1,13 @@
 {% block content %}
-<h1>Backtest <span class="muted">simulate strategy on historical data</span></h1>
-<div class="form-row">
-  <div><label for="tickers">Tickers (comma-separated)</label><input type="text" id="tickers" value="RELIANCE.NS,TCS.NS,INFY.NS" style="width:250px"></div>
-  <div><label for="period">Period</label><select id="period"><option value="3mo">3 months</option><option value="6mo" selected>6 months</option><option value="1y">1 year</option><option value="2y">2 years</option></select></div>
-  <div><label for="interval">Interval</label><select id="interval"><option value="1h" selected>1 hour</option><option value="1d">1 day</option><option value="15m">15 min</option></select></div>
-  <div><button onclick="runBacktest()">Run Backtest</button></div>
-</div>
+<header>
+  <h1>Backtest <span class="muted">simulate strategy on historical data</span></h1>
+  <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+    <div><input type="text" id="tickers" value="RELIANCE.NS,TCS.NS,INFY.NS" style="width:200px" placeholder="Tickers"></div>
+    <div><select id="period"><option value="3mo">3m</option><option value="6mo" selected>6m</option><option value="1y">1y</option><option value="2y">2y</option></select></div>
+    <div><select id="interval"><option value="1h" selected>1h</option><option value="1d">1d</option><option value="15m">15m</option></select></div>
+    <button onclick="runBacktest()">Run</button>
+  </div>
+</header>
 <div id="results"><div class="loading">Configure parameters and run backtest to see results</div></div>
 {% endblock %}
 <script>

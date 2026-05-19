@@ -2,8 +2,11 @@
 <style>
   .section b{color:var(--fg)}
   .ticker-chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
-  .ticker-chip{padding:8px 14px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:11px;cursor:pointer;font-weight:700;font-size:0.78rem;color:var(--fg);transition:all .18s var(--ease);letter-spacing:-0.01em}
+  .ticker-chip{padding:8px 14px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:11px;cursor:pointer;font-weight:700;font-size:0.78rem;color:var(--fg);transition:all .18s var(--ease);letter-spacing:-0.01em;position:relative;user-select:none}
   .ticker-chip:hover{transform:translateY(-1px);border-color:var(--accent);box-shadow:0 0 0 1px rgba(0,255,136,0.18)}
+  .ticker-chip.loading{border-color:var(--accent);background:var(--accent-soft);pointer-events:none;animation:pulse-border 1.2s ease-in-out infinite}
+  .ticker-chip.loading::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:8px;animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,0.3)}50%{box-shadow:0 0 0 4px rgba(0,255,136,0.08)}}
   .ticker-chips-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px}
 </style>
 
@@ -23,10 +26,17 @@
 <div id="results"></div>
 {% endblock %}
 <script>
+let loadingChip=null;
+
 async function analyze(ticker){
   ticker=ticker||document.getElementById('ticker-input').value.toUpperCase().replace('.NS','');
   if(!ticker)return;
   document.getElementById('ticker-input').value=ticker;
+
+  if(loadingChip)loadingChip.classList.remove('loading');
+  loadingChip=document.querySelector(`.ticker-chip[data-ticker="${ticker}"]`);
+  if(loadingChip)loadingChip.classList.add('loading');
+
   document.getElementById('results').innerHTML='<div class="loading">Analyzing '+ticker+'...</div>';
   try{
     const[ind,news,opt]=await Promise.all([
@@ -36,6 +46,7 @@ async function analyze(ticker){
     ]);
     render(ticker,ind,news,opt);
   }catch(e){document.getElementById('results').innerHTML='<div class="loading">Error: '+e.message+'</div>'}
+  if(loadingChip){loadingChip.classList.remove('loading');loadingChip=null}
 }
 
 async function loadWatchlist(){
@@ -44,7 +55,7 @@ async function loadWatchlist(){
     const r=await fetch('/api/v1/settings');
     const cfg=await r.json();
     const tickers=(cfg.tickers||'RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS').split(',').map(t=>t.trim().replace('.NS','')).filter(Boolean);
-    chips.innerHTML=tickers.map(t=>`<div class="ticker-chip" onclick="analyze('${t}')">${t}</div>`).join('');
+    chips.innerHTML=tickers.map(t=>`<div class="ticker-chip" data-ticker="${t}" onclick="analyze('${t}')">${t}</div>`).join('');
   }catch(e){chips.innerHTML='<span class="muted">Could not load watchlist</span>'}
 }
 

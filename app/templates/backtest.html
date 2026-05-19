@@ -163,7 +163,7 @@ function renderChart(ticker,vals){
     <div class="chart-summary">
       <span class="ticker-label">${ticker.replace('.NS','')}</span>
       <span class="equity-change" style="color:${colorVar}">${pct>=0?'+':''}${pct}%</span>
-      <span class="equity-range"><span>Start <strong>₹${startVal.toFixed(0)}</strong></span><span>&rarr; <strong>₹${endVal.toFixed(0)}</strong></span></span>
+      <span class="equity-range"><span>Equity <strong>₹${startVal.toFixed(0)}</strong></span><span>&rarr; <strong>₹${endVal.toFixed(0)}</strong></span></span>
     </div>
     <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
       ${grid}

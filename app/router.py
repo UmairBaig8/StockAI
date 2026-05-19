@@ -339,7 +339,7 @@ async def get_news(ticker: str = ""):
     if ticker:
         items = news_scraper.get_news_for_ticker(ticker, limit=10)
     else:
-        items = news_scraper.get_latest_news(limit=20)
+        items = news_scraper.get_latest_news(limit=50)
     return {"ticker": ticker, "count": len(items), "items": items}
 
 

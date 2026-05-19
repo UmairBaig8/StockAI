@@ -146,16 +146,19 @@ async def dash(store: VectorStore = Depends(get_store), settings: Settings = Dep
     losses = sum(1 for t in trades if t.pnl <= 0)
     total = len(trades)
 
-    # Merge with real DB data if in-memory is empty
+    # Merge with real wallet/DB data if in-memory is empty
     if total == 0:
         try:
+            from .wallet import wallet as w
             db_summary = await get_summary()
             total = db_summary.get("total_trades", 0)
             wins = db_summary.get("wins", 0)
             losses = db_summary.get("losses", 0)
-            total_pnl_amount = db_summary.get("pnl", 0)
-            total_invested = 100000  # initial capital — DB P&L is net since inception
-            total_pnl_pct = (total_pnl_amount / total_invested * 100) if total_invested > 0 else 0
+            # Use wallet for equity (same source as report page)
+            snap_w = w.snapshot()
+            total_invested = snap_w.get("initial_capital", 100000)
+            total_pnl_amount = snap_w.get("total_pnl", 0)
+            total_pnl_pct = snap_w.get("total_pnl_pct", 0)
         except Exception:
             pass
 

@@ -1,11 +1,12 @@
 {% block content %}
 <style>
-  .ticker-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .toolbar{display:flex;gap:12px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
+  .ticker-row{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
   .ticker-chip{padding:7px 14px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:10px;font-size:0.74rem;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s var(--ease);user-select:none;letter-spacing:-0.01em}
   .ticker-chip:hover{border-color:var(--accent);color:var(--fg)}
   .ticker-chip.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 1px rgba(0,255,136,0.15)}
 
-  .params-row{display:flex;gap:14px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+  .params-row{display:flex;gap:10px;align-items:center;flex-shrink:0}
   .param-group{display:flex;align-items:center;gap:6px}
   .param-group label{font-size:0.66rem;color:var(--muted);font-weight:700;margin:0;white-space:nowrap}
 
@@ -31,16 +32,15 @@
   <h1>Backtest <span class="muted">simulate strategy on historical data</span></h1>
 </header>
 
-<div class="ticker-row" id="ticker-chips"><span class="muted" style="font-size:0.72rem;padding:7px 0">Loading tickers...</span></div>
-
-<div class="params-row">
-  <div class="param-group">
-    <label for="period">Period</label>
-    <select id="period"><option value="1mo">1 mo</option><option value="3mo">3 mo</option><option value="6mo" selected>6 mo</option><option value="1y">1 year</option><option value="2y">2 years</option></select>
-  </div>
-  <div class="param-group">
-    <label for="interval">Interval</label>
-    <select id="interval"><option value="1h" selected>1 hour</option><option value="1d">1 day</option><option value="15m">15 min</option></select>
+<div class="toolbar">
+  <div class="ticker-row" id="ticker-chips"><span class="muted" style="font-size:0.72rem;padding:7px 0">Loading tickers...</span></div>
+  <div class="params-row">
+    <div class="param-group">
+      <select id="period"><option value="1mo">1 mo</option><option value="3mo">3 mo</option><option value="6mo" selected>6 mo</option><option value="1y">1 year</option><option value="2y">2 years</option></select>
+    </div>
+    <div class="param-group">
+      <select id="interval"><option value="1h" selected>1h</option><option value="1d">1d</option><option value="15m">15m</option></select>
+    </div>
   </div>
 </div>
 

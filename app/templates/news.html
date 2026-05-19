@@ -6,12 +6,15 @@
   .news-item .meta a{font-size:0.66rem;color:var(--accent)}
 </style>
 
-<h1>Market News <span class="muted">via Moneycontrol & ET</span></h1>
-<div class="controls">
-  <input type="text" id="search" placeholder="Search ticker or keyword..." oninput="render()" aria-label="Search news">
-  <button onclick="fetchNews()" aria-label="Refresh news">Refresh</button>
-  <span id="status" style="font-size:0.65rem;color:var(--muted)"></span>
-</div>
+<header>
+  <h1>Market News <span class="muted">via Moneycontrol & ET</span></h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span id="status" style="font-size:0.65rem;color:var(--muted)"></span>
+    <input type="text" id="search" placeholder="Search ticker or keyword..." oninput="render()" aria-label="Search news" style="width:200px">
+    <button onclick="fetchNews()" aria-label="Refresh news">Refresh</button>
+  </div>
+</header>
+
 <div id="news-list"><div class="loading">Loading news...</div></div>
 {% endblock %}
 <script>
@@ -19,6 +22,7 @@ let newsItems=[];
 async function fetchNews(){
   document.getElementById('status').textContent='Fetching...';
   try{const r=await fetch('/api/v1/news');const d=await r.json();newsItems=d.items||[];
+    newsItems.sort((a,b)=>new Date(b.published||0)-new Date(a.published||0));
     document.getElementById('status').textContent=newsItems.length+' articles';
     render()}catch(e){document.getElementById('status').textContent='Failed'}
 }

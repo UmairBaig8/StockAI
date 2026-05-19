@@ -8,12 +8,18 @@
   .ticker-chip{padding:6px 12px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:10px;font-size:0.72rem;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s var(--ease);user-select:none}
   .ticker-chip:hover{border-color:var(--accent);color:var(--fg)}
   .ticker-chip.selected{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .ticker-chip.from-history{position:relative}
+  .ticker-chip.from-history::after{content:'hist';position:absolute;top:-5px;right:-3px;font-size:0.42rem;background:var(--accent);color:#000;padding:1px 3px;border-radius:3px;font-weight:800;line-height:1}
+  .chip-label{font-size:0.62rem;color:var(--muted);margin-right:4px;align-self:center;white-space:nowrap}
 
-  .equity-chart-wrap{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:14px;padding:18px;margin:14px 0}
-  .equity-chart-wrap .chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-  .equity-chart-wrap .chart-title{font-size:0.78rem;font-weight:700;color:var(--fg);letter-spacing:-0.01em}
-  .equity-chart-wrap .chart-stats{display:flex;gap:16px;font-size:0.64rem;color:var(--muted)}
+  .equity-chart-wrap{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:14px;padding:18px;margin:14px 0;width:100%}
   .equity-chart-wrap svg{width:100%;height:200px}
+  .chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .chart-title{font-size:0.78rem;font-weight:700;color:var(--fg);letter-spacing:-0.01em}
+  .chart-stats{display:flex;gap:16px;font-size:0.64rem;color:var(--muted)}
+
+  .pagination{display:flex;gap:6px;align-items:center;justify-content:center;margin-top:10px;font-size:0.68rem;color:var(--muted)}
+  .pagination button{padding:4px 10px;min-height:auto;font-size:0.68rem}
 </style>
 
 <header>
@@ -25,54 +31,66 @@
   </div>
 </header>
 
-<div class="ticker-select" id="ticker-chips"><span class="muted" style="font-size:0.72rem">Loading watchlist...</span></div>
+<div class="ticker-select" id="ticker-chips"><span class="muted" style="font-size:0.72rem">Loading tickers...</span></div>
 
 <div id="results">
   <div class="backtest-intro">
     <h3>What is Backtesting?</h3>
-    <p>Simulate your strategy on <b>historical data</b> — no real money at risk. Select tickers above, pick period & interval, then Run.</p>
+    <p>Simulate your strategy on <b>historical data</b> — no real money at risk. Tickers from your trading history are shown above. Select the ones you want, pick period & interval, then Run.</p>
   </div>
 </div>
 {% endblock %}
 <script>
-let allTickers=[],selected=new Set();
+let selected=new Set();
+const PAGE_SIZE=10;
 
-async function loadWatchlist(){
-  try{const r=await fetch('/api/v1/settings');const cfg=await r.json();
-    allTickers=(cfg.tickers||'RELIANCE.NS,TCS.NS,INFY.NS').split(',').map(t=>t.trim()).filter(Boolean);
-    allTickers.forEach(t=>selected.add(t));
-    renderChips();
-  }catch(e){allTickers=['RELIANCE.NS','TCS.NS','INFY.NS'];allTickers.forEach(t=>selected.add(t));renderChips()}
-}
-function renderChips(){
-  document.getElementById('ticker-chips').innerHTML=allTickers.map(t=>{
-    const s=selected.has(t);
-    return `<span class="ticker-chip${s?' selected':''}" onclick="toggleTicker('${t}')">${t.replace('.NS','')}</span>`;
+async function loadTickers(){
+  const el=document.getElementById('ticker-chips');
+  const tickers=new Map();
+  try{
+    const r=await fetch('/api/v1/settings');
+    const cfg=await r.json();
+    (cfg.tickers||'').split(',').map(t=>t.trim()).filter(Boolean).forEach(t=>{if(!tickers.has(t))tickers.set(t,'watchlist')});
+  }catch(e){}
+  try{
+    const r=await fetch('/api/v1/history?limit=100');
+    const d=await r.json();
+    (d.trades||[]).forEach(t=>{const tk=t.ticker;if(tk&&!tickers.has(tk+'.NS'))tickers.set(tk+'.NS','history')});
+  }catch(e){}
+  if(!tickers.size){tickers.set('RELIANCE.NS','watchlist');tickers.set('TCS.NS','watchlist');tickers.set('INFY.NS','watchlist')}
+  tickers.forEach((src,tk)=>{if(src==='history')selected.add(tk)});
+  el.innerHTML='<span class="chip-label">Traded:</span>'+[...tickers].map(([tk,src])=>{
+    const s=selected.has(tk);
+    const cls=src==='history'?'from-history':'';
+    return `<span class="ticker-chip ${cls}${s?' selected':''}" onclick="toggle('${tk}')">${tk.replace('.NS','')}</span>`;
   }).join('');
 }
-function toggleTicker(t){
-  selected.has(t)?selected.delete(t):selected.add(t);
-  renderChips();
+function toggle(tk){selected.has(tk)?selected.delete(tk):selected.add(tk);renderChipsS()}
+function renderChipsS(){
+  document.querySelectorAll('.ticker-chip').forEach(c=>{
+    const tk=c.textContent.replace('hist','')+'.NS';
+    c.classList.toggle('selected',selected.has(tk));
+  });
 }
-function getSelected(){return [...selected].join(', ')}
+function getSelected(){return[...selected].join(', ')}
 
 async function runBacktest(){
   const tickers=getSelected();
   if(!tickers){alert('Select at least one ticker');return}
+  const period=document.getElementById('period').value;
+  const interval=document.getElementById('interval').value;
   document.getElementById('results').innerHTML='<div class="loading">Running backtest on '+tickers.split(',').length+' tickers... (may take 30-60s)</div>';
-  const body={tickers,period:document.getElementById('period').value,interval:document.getElementById('interval').value};
+  const body={tickers,period,interval};
   try{const r=await fetch('/api/v1/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();
     if(d.error){document.getElementById('results').innerHTML='<div class="loading">'+d.error+'</div>';return}
     const s=d.summary;const ret=s.total_return_pct||0;
     const color=ret>=0?'var(--accent)':'var(--err)';
     const curves=d.equity_curves||{};
     const chartsHtml=Object.entries(curves).map(([tk,v])=>renderChart(tk,v)).join('');
+    const trades=d.recent_trades||[];
+    window._trades=trades;window._page=0;
     document.getElementById('results').innerHTML=`
-      <div class="card">
-        <div class="chart-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <span class="chart-title">${Object.keys(curves).length} ticker${Object.keys(curves).length>1?'s':''} · ${body.period} · ${body.interval}</span>
-          <span style="font-size:0.72rem;font-weight:800;color:${color}">${ret>=0?'+':''}${ret.toFixed(1)}%</span>
-        </div>
+      <div class="card"><h3>${Object.keys(curves).length} tickers · ${period} · ${interval} · ${ret>=0?'+':''}${ret.toFixed(1)}%</h3>
         <div class="metric-row">
           <div class="metric"><span class="val">${s.total_trades}</span><span class="lbl">Trades</span></div>
           <div class="metric"><span class="val">${s.win_rate}%</span><span class="lbl">Win Rate</span></div>
@@ -87,44 +105,49 @@ async function runBacktest(){
       </div>
       ${chartsHtml}
       <div class="card"><h3>Recent Trades</h3>
-        <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>P&L ₹</th></tr></thead>
-        <tbody>${(d.recent_trades||[]).map(t=>`<tr><td>${(t.entry_time||'').slice(0,16)}</td><td>${t.ticker}</td><td>${t.dir}</td><td>${t.qty}</td><td>${t.entry}</td><td>${t.exit}</td><td style="color:${t.pnl_pct>0?'var(--accent)':'var(--err)'}">${(t.pnl_pct>0?'+':'')+t.pnl_pct}%</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">₹${t.pnl}</td></tr>`).join('')}</tbody></table></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Q</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>₹</th></tr></thead>
+        <tbody id="trade-body"></tbody></table></div>
+        <div class="pagination" id="trade-pager"></div>
       </div>`;
+    renderTradePage();
   }catch(e){document.getElementById('results').innerHTML='<div class="loading">Error: '+e.message+'</div>'}
+}
+
+function renderTradePage(){
+  const trades=window._trades||[];
+  const page=window._page||0;
+  const start=page*PAGE_SIZE;
+  const slice=trades.slice(start,start+PAGE_SIZE);
+  const el=document.getElementById('trade-body');
+  if(!el)return;
+  el.innerHTML=slice.map(t=>`<tr><td>${(t.entry_time||'').slice(0,16)}</td><td>${t.ticker}</td><td>${t.dir}</td><td>${t.qty}</td><td>${t.entry}</td><td>${t.exit}</td><td style="color:${t.pnl_pct>0?'var(--accent)':'var(--err)'}">${(t.pnl_pct>0?'+':'')+t.pnl_pct}%</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">₹${t.pnl}</td></tr>`).join('');
+  const total=Math.ceil(trades.length/PAGE_SIZE);
+  const pager=document.getElementById('trade-pager');
+  if(!pager)return;
+  pager.innerHTML=`<button onclick="window._page=Math.max(0,${page-1});renderTradePage()" ${page===0?'disabled':''}>Prev</button><span>${page+1} / ${total||1}</span><button onclick="window._page=Math.min(${total-1},${page+1});renderTradePage()" ${page>=total-1?'disabled':''}>Next</button>`;
 }
 
 function renderChart(ticker,vals){
   const len=vals.length;if(len<2)return'';
-  const w=960,h=200,ml=52,mr=16,mt=18,mb=28;
+  const w=1000,h=200,ml=56,mr=20,mt=18,mb=28;
   const pw=w-ml-mr,ph=h-mt-mb;
   const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
   const startVal=vals[0],endVal=vals[len-1];
   const pct=((endVal-startVal)/startVal*100).toFixed(1);
   const color=pct>=0?'#00ff88':'#ff4d5e';
 
-  // Line points
   const pts=vals.map((v,i)=>`${ml+(i/(len-1))*pw},${mt+ph-((v-min)/range)*ph}`).join(' ');
+  const areaPts=pts+` ${ml+pw},${mt+ph} ${ml},${mt+ph}`;
 
-  // Area fill
-  const areaPts=pts+` ${ml+(len-1)/(len-1)*pw},${mt+ph} ${ml},${mt+ph}`;
-
-  // Grid lines (4 horizontal)
   let grid='';
   for(let i=0;i<=4;i++){
     const y=mt+(i/4)*ph;
     const val=min+(range*(1-i/4));
-    grid+=`<line x1="${ml}" x2="${ml+pw}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-    <text x="${ml-6}" y="${y+4}" fill="var(--muted)" font-size="9" text-anchor="end">₹${(val/1000).toFixed(1)}k</text>`;
+    grid+=`<line x1="${ml}" x2="${ml+pw}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.04)" stroke-width="1"/><text x="${ml-6}" y="${y+4}" fill="var(--muted)" font-size="9" text-anchor="end">₹${(val/1000).toFixed(1)}k</text>`;
   }
 
-  // Start/end markers
-  const startX=ml,startY=mt+ph-((startVal-min)/range)*ph;
   const endX=ml+pw,endY=mt+ph-((endVal-min)/range)*ph;
-
-  // End dot
   const dot=`<circle cx="${endX}" cy="${endY}" r="4" fill="${color}" stroke="var(--bg)" stroke-width="2"/>`;
-
-  // End label
   const label=`<text x="${endX+8}" y="${endY+4}" fill="${color}" font-size="11" font-weight="700">${pct>=0?'+':''}${pct}%</text>`;
 
   return `<div class="equity-chart-wrap">
@@ -141,5 +164,5 @@ function renderChart(ticker,vals){
   </div>`;
 }
 
-loadWatchlist();
+loadTickers();
 </script>

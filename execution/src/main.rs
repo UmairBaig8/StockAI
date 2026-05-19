@@ -42,8 +42,11 @@ struct TradeResult {
     pnl_percent: f64,
     status: String,
     timestamp: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    suspect: bool,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct OpenPosition {
     qty: u64,
     entry_price: f64,
@@ -164,12 +167,34 @@ async fn signal_loop(
     pubsub.subscribe("trade:signal").await?;
     info!("Subscribed to trade:signal");
 
-    let mut stream = pubsub.on_message();
     let mut positions: HashMap<String, OpenPosition> = HashMap::new();
     let mut rate_limiter = RateLimiter::new(10, 1.0); // 10 burst, refill 1/sec
 
+    // Restore positions from Redis (survive engine restarts)
+    let redis_persist = redis::Client::open(redis_addr()).ok();
+    if let Some(ref rp) = redis_persist {
+        if let Ok(mut conn) = rp.get_multiplexed_async_connection().await {
+            let stored: HashMap<String, String> = redis::cmd("HGETALL")
+                .arg("engine:positions")
+                .query_async(&mut conn)
+                .await
+                .unwrap_or_default();
+            for (ticker, json) in &stored {
+                if let Ok(pos) = serde_json::from_str::<OpenPosition>(json) {
+                    info!("Restored position from Redis: {} qty={} @ {:.2}", ticker, pos.qty, pos.entry_price);
+                    positions.insert(ticker.clone(), pos);
+                }
+            }
+            if !stored.is_empty() {
+                info!("Loaded {} positions from Redis", stored.len());
+            }
+        }
+    }
+
     // Separate Redis client for 2FA check
     let redis_2fa = redis::Client::open(redis_addr()).ok();
+
+    let mut stream = pubsub.on_message();
 
     loop {
         let msg = stream.next().await.ok_or("pubsub stream ended")?;
@@ -237,10 +262,29 @@ async fn signal_loop(
 
                 if signal.direction.to_uppercase() == "BUY" || signal.direction.to_uppercase() == "LONG" {
                     // Open position — publish OPEN status, no P&L yet
-                    positions.insert(ticker.clone(), OpenPosition {
+                    let op = OpenPosition {
                         qty: signal.quantity,
                         entry_price: signal.price,
-                    });
+                    };
+
+                    // Persist to Redis for crash recovery (serialize before move)
+                    let op_json = serde_json::to_string(&op).ok();
+                    positions.insert(ticker.clone(), op);
+
+                    if let Some(ref rp) = redis_persist {
+                        if let Some(ref json) = op_json {
+                            if let Ok(mut conn) = rp.get_multiplexed_async_connection().await {
+                                let _: () = redis::cmd("HSET")
+                                    .arg("engine:positions")
+                                    .arg(&ticker)
+                                    .arg(json)
+                                    .query_async(&mut conn)
+                                    .await
+                                    .unwrap_or(());
+                            }
+                        }
+                    }
+
                     info!("Position opened: {} qty={} @ {:.2} (total positions: {})", ticker, signal.quantity, signal.price, positions.len());
 
                     let result = TradeResult {
@@ -253,6 +297,7 @@ async fn signal_loop(
                         pnl_percent: 0.0,
                         status: "OPEN".into(),
                         timestamp: now,
+                        suspect: false,
                     };
                     let result_json = serde_json::to_string(&result).unwrap();
                     let _: () = pub_conn.publish("trade:result", result_json).await?;
@@ -262,15 +307,33 @@ async fn signal_loop(
                     let pos = positions.remove(&ticker);
                     let exit_price = signal.price;  // strategy sends current yfinance price
 
-                    let (entry_price, pnl_pct, status, should_publish) = if let Some(pos) = pos {
+                    // Remove from Redis persistence
+                    if let Some(ref rp) = redis_persist {
+                        if let Ok(mut conn) = rp.get_multiplexed_async_connection().await {
+                            let _: () = redis::cmd("HDEL")
+                                .arg("engine:positions")
+                                .arg(&ticker)
+                                .query_async(&mut conn)
+                                .await
+                                .unwrap_or(());
+                        }
+                    }
+
+                    let (entry_price, pnl_pct, status, should_publish, suspect) = if let Some(pos) = pos {
                         let pnl = (exit_price - pos.entry_price) / pos.entry_price * 100.0;
                         let s = if pnl >= 0.0 { "WIN" } else { "LOSS" };
+                        // Flag suspect trades where entry ≈ exit (possible stale price)
+                        let delta = (exit_price - pos.entry_price).abs() / pos.entry_price;
+                        let susp = delta < 0.001;
+                        if susp {
+                            warn!("Suspect trade: {} entry={:.2} exit={:.2} delta={:.4}% — possible stale price", ticker, pos.entry_price, exit_price, delta * 100.0);
+                        }
                         info!("Position closed: {} entry={:.2} exit={:.2} pnl={:+.2}% (remaining: {})", ticker, pos.entry_price, exit_price, pnl, positions.len());
-                        (pos.entry_price, pnl, s.to_string(), true)
+                        (pos.entry_price, pnl, s.to_string(), true, susp)
                     } else {
                         // No open position tracked — reject orphaned sell, don't publish bogus result
                         warn!("No open position for {} — rejecting orphaned SELL signal", ticker);
-                        (signal.price, 0.0, "REJECTED".to_string(), false)
+                        (signal.price, 0.0, "REJECTED".to_string(), false, false)
                     };
 
                     if should_publish {
@@ -284,6 +347,7 @@ async fn signal_loop(
                             pnl_percent: (pnl_pct * 100.0).round() / 100.0,
                             status,
                             timestamp: now,
+                            suspect,
                         };
                         let result_json = serde_json::to_string(&result).unwrap();
                         let _: () = pub_conn.publish("trade:result", result_json).await?;

@@ -210,6 +210,15 @@ class StrategyAgent:
                     if await self._check_memory(ticker, rsi):
                         logger.info(f"Strategy: {ticker} BUY BLOCKED by memory (similar past failure)")
                         continue
+                    if await self._check_researcher(ticker):
+                        logger.info(f"Strategy: {ticker} BUY BLOCKED by researcher (AVOID/Bearish)")
+                        continue
+                    if await self._check_sentiment(ticker):
+                        logger.info(f"Strategy: {ticker} BUY BLOCKED by sentiment (extreme fear)")
+                        continue
+                    if await self._check_macro():
+                        logger.info(f"Strategy: {ticker} BUY BLOCKED by macro (high risk)")
+                        continue
 
                 trade = {
                     "ticker": ticker,
@@ -621,6 +630,69 @@ class StrategyAgent:
                 data = r.json()
                 return data.get("matched", False)
         except Exception:
+            return False
+
+    async def _check_researcher(self, ticker: str) -> bool:
+        """Check Researcher agent — BLOCK if AVOID recommendation or Bearish with low confidence."""
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.post(
+                    f"{self.memory_url}/api/v1/research",
+                    json={"ticker": ticker, "sector": "General", "exchange": "NSE"},
+                )
+                if r.status_code != 200:
+                    return False
+                data = r.json()
+                rec = data.get("trade_recommendation", "").upper()
+                sentiment = data.get("sentiment", {}).get("value", "") if isinstance(data.get("sentiment"), dict) else data.get("sentiment", "")
+                confidence = float(data.get("confidence", 0.5))
+                if rec == "AVOID" or (str(sentiment).upper() == "BEARISH" and confidence > 0.6):
+                    logger.info(f"Researcher: {ticker} → {rec} sentiment={sentiment} conf={confidence:.0%}")
+                    return True  # BLOCK
+                return False
+        except Exception as e:
+            logger.debug(f"Researcher check skipped for {ticker}: {e}")
+            return False  # Allow if unavailable
+
+    async def _check_sentiment(self, ticker: str) -> bool:
+        """Check Sentiment agent — BLOCK if Fear & Greed Index < 30 (extreme fear)."""
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.post(
+                    f"{self.memory_url}/api/v1/sentiment",
+                    json={"ticker": ticker, "sector": "General"},
+                )
+                if r.status_code != 200:
+                    return False
+                data = r.json()
+                fgi = float(data.get("fgi", 50))
+                if fgi < 30:
+                    logger.info(f"Sentiment: {ticker} FGI={fgi:.0f} (extreme fear) — blocking")
+                    return True  # BLOCK
+                return False
+        except Exception as e:
+            logger.debug(f"Sentiment check skipped for {ticker}: {e}")
+            return False
+
+    async def _check_macro(self) -> bool:
+        """Check Macro analyst — BLOCK if overall market risk is HIGH."""
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.post(
+                    f"{self.memory_url}/api/v1/macro",
+                    json={"context": "pre-trade check before NSE equity buy"},
+                )
+                if r.status_code != 200:
+                    return False
+                data = r.json()
+                risk = str(data.get("risk_level", data.get("risk", ""))).upper()
+                outlook = str(data.get("outlook", "")).upper()
+                if risk == "HIGH" or outlook == "BEARISH":
+                    logger.info(f"Macro: risk={risk} outlook={outlook} — blocking trades")
+                    return True  # BLOCK
+                return False
+        except Exception as e:
+            logger.debug(f"Macro check skipped: {e}")
             return False
 
     async def _publish_trade(self, trade: dict):

@@ -42,7 +42,7 @@ def render_page(template_name: str, title: str, active: str) -> str:
     links = [
         ("/", "Cockpit", "cockpit"),
         ("/research", "Research", "research"),
-        ("/news", 'News <span class="badge ms-auto" id="news-count">-</span>', "news"),
+        ("/news", "News", "news"),
         ("/backtest", "Backtest", "backtest"),
         ("/history", "History", "history"),
         ("/report", "Report", "report"),

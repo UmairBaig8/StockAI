@@ -10,10 +10,16 @@
   .field label{font-size:0.64rem;color:var(--muted);font-weight:700}
   .field input,.field select{width:100%;min-height:34px;padding:7px 9px;font-size:0.76rem}
 
-  .agent-table{display:grid;grid-template-columns:1fr 130px 150px;gap:6px 8px;align-items:center;font-size:0.7rem}
+  .agent-table{display:grid;grid-template-columns:1fr 120px 140px auto;gap:6px 8px;align-items:center;font-size:0.7rem}
   .agent-table .agent-name{color:var(--fg);font-weight:600;padding:3px 0}
   .agent-table .header{font-size:0.58rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
   .agent-table select,.agent-table input{min-height:30px;padding:5px 7px;font-size:0.7rem}
+  .status-pill{font-size:0.58rem;padding:2px 7px;border-radius:999px;font-weight:700;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+  .status-pill.ok{background:var(--accent-soft);color:var(--accent)}
+  .status-pill.fail{background:rgba(255,77,94,0.1);color:var(--err)}
+  .status-pill.checking{background:rgba(255,170,0,0.1);color:var(--warn)}
+  .btn-micro{min-height:auto;padding:3px 8px;font-size:0.6rem;border-radius:6px;font-weight:700;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;margin-left:4px}
+  .btn-micro:hover{color:var(--fg);border-color:var(--accent)}
 
   @media(max-width:700px){.agent-table{grid-template-columns:1fr}.field-row.cols-3,.field-row.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media(max-width:420px){.field-row{grid-template-columns:1fr}}
@@ -46,13 +52,14 @@
 
   <div class="settings-card">
     <h2>Per-Agent LLM</h2>
-    <div class="agent-table">
-      <span class="header">Agent</span><span class="header">Provider</span><span class="header">Model</span>
-      <span class="agent-name">Critic</span><select id="llm_critic_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_critic_model" placeholder="gpt-4o-mini">
-      <span class="agent-name">Researcher</span><select id="llm_researcher_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_researcher_model" placeholder="gemini-2.5-flash">
-      <span class="agent-name">Devil's Advocate</span><select id="llm_advocate_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_advocate_model" placeholder="deepseek-chat">
-      <span class="agent-name">Sentiment</span><select id="llm_sentiment_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_sentiment_model" placeholder="gemini-2.5-flash">
-      <span class="agent-name">Macro Analyst</span><select id="llm_macro_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_macro_model" placeholder="gemini-2.5-flash">
+    <p class="help" style="font-size:0.6rem;color:var(--muted);margin:-6px 0 8px">Leave blank to use the default provider. Each agent can use a different LLM for cost optimization.</p>
+    <div class="agent-table" id="agent-table">
+      <span class="header">Agent</span><span class="header">Provider</span><span class="header">Model</span><span class="header">Status</span>
+      <span class="agent-name">Critic</span><select id="llm_critic_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_critic_model" placeholder="gpt-4o-mini"><span class="status-pill" id="st-critic">-</span>
+      <span class="agent-name">Researcher</span><select id="llm_researcher_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_researcher_model" placeholder="gemini-2.5-flash"><span class="status-pill" id="st-researcher">-</span>
+      <span class="agent-name">Devil's Advocate</span><select id="llm_advocate_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_advocate_model" placeholder="deepseek-chat"><span class="status-pill" id="st-advocate">-</span>
+      <span class="agent-name">Sentiment</span><select id="llm_sentiment_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_sentiment_model" placeholder="gemini-2.5-flash"><span class="status-pill" id="st-sentiment">-</span>
+      <span class="agent-name">Macro Analyst</span><select id="llm_macro_provider"><option value="">Default</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select><input type="text" id="llm_macro_model" placeholder="gemini-2.5-flash"><span class="status-pill" id="st-macro">-</span>
     </div>
   </div>
 
@@ -129,4 +136,31 @@
   }
 
   loadSettings();
+  checkLLMStatus();
+
+  async function checkLLMStatus(){
+    try{
+      var r = await fetch('/api/v1/llm/check');
+      var d = await r.json();
+      var provs = d.providers||{};
+      var active = d.active||'';
+      // Update per-agent status pills
+      ['critic','researcher','advocate','sentiment','macro'].forEach(function(agent){
+        var el = document.getElementById('st-'+agent);
+        var sel = document.getElementById('llm_'+agent+'_provider');
+        var prov = (sel&&sel.value) || active;
+        var info = provs[prov];
+        if(info && info.configured){
+          el.className = 'status-pill ok';
+          el.textContent = 'OK';
+        } else if(info){
+          el.className = 'status-pill fail';
+          el.textContent = 'No key';
+        } else {
+          el.className = 'status-pill fail';
+          el.textContent = 'Unknown';
+        }
+      });
+    }catch(e){}
+  }
 </script>

@@ -1,25 +1,25 @@
 {% block content %}
 <style>
   .section b{color:var(--fg)}
-  .ticker-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-  .ticker-chip{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:12px;cursor:pointer;transition:all .18s var(--ease);min-width:120px}
+  .ticker-chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
+  .ticker-chip{padding:8px 14px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:11px;cursor:pointer;font-weight:700;font-size:0.78rem;color:var(--fg);transition:all .18s var(--ease);letter-spacing:-0.01em}
   .ticker-chip:hover{transform:translateY(-1px);border-color:var(--accent);box-shadow:0 0 0 1px rgba(0,255,136,0.18)}
-  .ticker-chip .sym{font-weight:800;font-size:0.82rem;color:var(--fg);letter-spacing:-0.01em}
-  .ticker-chip .price{font-size:0.68rem;color:var(--muted)}
-  .ticker-chip .chg{font-size:0.68rem;font-weight:700}
-  .inline-search{display:flex;gap:8px;align-items:center;padding:12px 14px;background:var(--surface-2);border:1px dashed var(--border-soft);border-radius:12px;margin-bottom:16px}
-  .inline-search label{font-size:0.72rem;color:var(--muted);white-space:nowrap;margin:0}
+  .ticker-chips-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px}
 </style>
 
-<h1>Research <span class="muted">deep-dive per ticker</span></h1>
+<header>
+  <h1>Research <span class="muted">deep-dive per ticker</span></h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <input type="text" id="ticker-input" placeholder="e.g. RELIANCE" aria-label="Ticker" style="text-transform:uppercase;width:180px" onkeydown="if(event.key==='Enter')analyze()">
+    <button onclick="analyze()" aria-label="Analyze ticker">Analyze</button>
+  </div>
+</header>
+
+<div class="ticker-chips-label">Watchlist</div>
 <div class="ticker-chips" id="ticker-chips">
-  <div class="loading" style="padding:12px 16px">Loading watchlist...</div>
+  <span class="muted" style="font-size:0.72rem">Loading...</span>
 </div>
-<div class="inline-search">
-  <label>or enter ticker:</label>
-  <input type="text" id="ticker-input" placeholder="e.g. RELIANCE" aria-label="Ticker" style="text-transform:uppercase;width:180px" onkeydown="if(event.key==='Enter')analyze()">
-  <button onclick="analyze()" aria-label="Analyze ticker">Analyze</button>
-</div>
+
 <div id="results"></div>
 {% endblock %}
 <script>
@@ -44,26 +44,8 @@ async function loadWatchlist(){
     const r=await fetch('/api/v1/settings');
     const cfg=await r.json();
     const tickers=(cfg.tickers||'RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS').split(',').map(t=>t.trim().replace('.NS','')).filter(Boolean);
-    chips.innerHTML=tickers.map(t=>`<div class="ticker-chip" onclick="analyze('${t}')"><span class="sym">${t}</span><span class="price">--</span></div>`).join('');
-    fetchPrices(tickers);
+    chips.innerHTML=tickers.map(t=>`<div class="ticker-chip" onclick="analyze('${t}')">${t}</div>`).join('');
   }catch(e){chips.innerHTML='<span class="muted">Could not load watchlist</span>'}
-}
-
-async function fetchPrices(tickers){
-  try{
-    const r=await fetch('/api/v1/dash');
-    const d=await r.json();
-    const mkt=d.market||{};
-    document.querySelectorAll('.ticker-chip').forEach(chip=>{
-      const sym=chip.querySelector('.sym').textContent;
-      const q=mkt[sym+'.NS']||mkt[sym];
-      if(q){
-        const ch=((q.last_price-q.bid)/q.bid*100).toFixed(2);
-        chip.querySelector('.price').textContent='₹'+q.last_price.toFixed(1);
-        chip.querySelector('.price').insertAdjacentHTML('afterend',`<span class="chg" style="color:${ch>=0?'var(--accent)':'var(--err)'}">${ch>=0?'+':''}${ch}%</span>`);
-      }
-    });
-  }catch(e){}
 }
 
 function render(ticker,ind,news,opt){

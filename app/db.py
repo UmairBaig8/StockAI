@@ -251,18 +251,181 @@ async def get_daily_equity_curve(days: int = 30) -> list[dict]:
     summaries = await get_daily_summaries(days)
     summaries.reverse()  # chronological order
     cumulative = 0.0
+    peak = 0.0
+    max_drawdown = 0.0
     curve = []
-    # Find initial capital for baseline
     pool = await get_pool()
     async with pool.acquire() as conn:
         w = await conn.fetchrow("SELECT initial_capital FROM wallet WHERE id = 1")
         initial = float(w["initial_capital"]) if w else 100000.0
     for s in summaries:
         cumulative += s["pnl"]
+        equity = initial + cumulative
+        if equity > peak:
+            peak = equity
+        dd = (peak - equity) / peak * 100 if peak > 0 else 0
+        if dd > max_drawdown:
+            max_drawdown = dd
         curve.append({
             "date": s["date"],
             "daily_pnl": s["pnl"],
             "cumulative_pnl": round(cumulative, 2),
-            "equity": round(initial + cumulative, 2),
+            "equity": round(equity, 2),
+            "drawdown_pct": round(dd, 2),
         })
     return curve
+
+
+async def get_ticker_stats(days: int = 30) -> list[dict]:
+    """Per-ticker performance over N days."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT
+                ticker,
+                COUNT(*) as total_trades,
+                COUNT(*) FILTER (WHERE pnl_percent > 0) as wins,
+                COUNT(*) FILTER (WHERE pnl_percent < 0) as losses,
+                COALESCE(SUM(pnl_percent * entry_price * quantity / 100), 0) as total_pnl,
+                ROUND(COALESCE(AVG(pnl_percent) FILTER (WHERE pnl_percent > 0), 0)::numeric, 2) as avg_win,
+                ROUND(COALESCE(AVG(pnl_percent) FILTER (WHERE pnl_percent < 0), 0)::numeric, 2) as avg_loss,
+                ROUND(MAX(pnl_percent)::numeric, 2) as best_pnl,
+                ROUND(MIN(pnl_percent)::numeric, 2) as worst_pnl,
+                COALESCE(SUM(entry_price * quantity), 0) as volume
+            FROM trades
+            WHERE timestamp >= NOW() - ($1 || ' days')::INTERVAL
+            GROUP BY ticker
+            ORDER BY total_pnl DESC
+        """, str(days))
+        result = []
+        for r in rows:
+            total = r["total_trades"]
+            wins = r["wins"]
+            result.append({
+                "ticker": r["ticker"],
+                "total_trades": total,
+                "wins": wins,
+                "losses": r["losses"],
+                "win_rate": round((wins / total * 100) if total > 0 else 0, 1),
+                "pnl": round(float(r["total_pnl"]), 2),
+                "avg_win": float(r["avg_win"]),
+                "avg_loss": float(r["avg_loss"]),
+                "best_pnl": float(r["best_pnl"]),
+                "worst_pnl": float(r["worst_pnl"]),
+                "volume": round(float(r["volume"]), 2),
+            })
+        return result
+
+
+async def get_hourly_stats(days: int = 30) -> list[dict]:
+    """P&L by hour of day (IST) for timing analysis."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT
+                EXTRACT(HOUR FROM timestamp AT TIME ZONE 'Asia/Kolkata')::int as hour,
+                COUNT(*) as total_trades,
+                COUNT(*) FILTER (WHERE pnl_percent > 0) as wins,
+                COUNT(*) FILTER (WHERE pnl_percent < 0) as losses,
+                COALESCE(SUM(pnl_percent * entry_price * quantity / 100), 0) as total_pnl,
+                COALESCE(SUM(entry_price * quantity), 0) as volume
+            FROM trades
+            WHERE timestamp >= NOW() - ($1 || ' days')::INTERVAL
+            GROUP BY hour
+            ORDER BY hour
+        """, str(days))
+        return [
+            {
+                "hour": r["hour"],
+                "label": f"{r['hour']:02d}:00",
+                "total_trades": r["total_trades"],
+                "wins": r["wins"],
+                "losses": r["losses"],
+                "pnl": round(float(r["total_pnl"]), 2),
+                "volume": round(float(r["volume"]), 2),
+            }
+            for r in rows
+        ]
+
+
+async def get_strategy_stats(days: int = 30) -> list[dict]:
+    """Performance by strategy signal type (parsed from reason field)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT
+                reason,
+                COUNT(*) as total_trades,
+                COUNT(*) FILTER (WHERE pnl_percent > 0) as wins,
+                COUNT(*) FILTER (WHERE pnl_percent < 0) as losses,
+                COALESCE(SUM(pnl_percent * entry_price * quantity / 100), 0) as total_pnl
+            FROM trades
+            WHERE timestamp >= NOW() - ($1 || ' days')::INTERVAL AND reason != ''
+            GROUP BY reason
+            ORDER BY total_pnl DESC
+        """, str(days))
+        result = []
+        for r in rows:
+            total = r["total_trades"]
+            wins = r["wins"]
+            reason = r["reason"].strip()
+            # Categorize strategy type
+            if "MTF" in reason or "MACD" in reason:
+                cat = "MTF RSI + MACD"
+            elif "BB" in reason or "bounce" in reason or "overbought" in reason:
+                cat = "Bollinger Bands"
+            elif "Best opportunity" in reason or "best pick" in reason:
+                cat = "Forced (Best Pick)"
+            elif "Rotating" in reason or "weakest" in reason:
+                cat = "Forced (Rotate)"
+            elif "Take profit" in reason:
+                cat = "Take Profit"
+            elif "Stop loss" in reason:
+                cat = "Stop Loss"
+            elif "Trailing" in reason:
+                cat = "Trailing Stop"
+            else:
+                cat = "Other"
+            result.append({
+                "strategy": cat,
+                "reason": reason,
+                "total_trades": total,
+                "wins": wins,
+                "losses": r["losses"],
+                "win_rate": round((wins / total * 100) if total > 0 else 0, 1),
+                "pnl": round(float(r["total_pnl"]), 2),
+            })
+        return result
+
+
+async def get_weekly_summary(weeks: int = 12) -> list[dict]:
+    """Weekly aggregated performance."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT
+                DATE_TRUNC('week', timestamp AT TIME ZONE 'Asia/Kolkata') as week_start,
+                COUNT(*) as total_trades,
+                COUNT(*) FILTER (WHERE pnl_percent > 0) as wins,
+                COUNT(*) FILTER (WHERE pnl_percent < 0) as losses,
+                COALESCE(SUM(pnl_percent * entry_price * quantity / 100), 0) as total_pnl,
+                ROUND(COALESCE(AVG(pnl_percent) FILTER (WHERE pnl_percent > 0), 0)::numeric, 2) as avg_win,
+                ROUND(COALESCE(AVG(pnl_percent) FILTER (WHERE pnl_percent < 0), 0)::numeric, 2) as avg_loss
+            FROM trades
+            WHERE timestamp >= NOW() - ($1 || ' weeks')::INTERVAL
+            GROUP BY week_start
+            ORDER BY week_start DESC
+        """, str(weeks))
+        return [
+            {
+                "week": str(r["week_start"])[:10],
+                "total_trades": r["total_trades"],
+                "wins": r["wins"],
+                "losses": r["losses"],
+                "win_rate": round((r["wins"] / r["total_trades"] * 100) if r["total_trades"] > 0 else 0, 1),
+                "pnl": round(float(r["total_pnl"]), 2),
+                "avg_win": float(r["avg_win"]),
+                "avg_loss": float(r["avg_loss"]),
+            }
+            for r in rows
+        ]

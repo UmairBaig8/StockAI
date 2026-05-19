@@ -439,6 +439,11 @@ async def daily_report(days: int = 30):
         "today": today_summary,
         "daily_history": summaries,
         "equity_curve": equity,
+        "tickers": await _db.get_ticker_stats(days),
+        "hourly": await _db.get_hourly_stats(days),
+        "strategies": await _db.get_strategy_stats(days),
+        "weekly": await _db.get_weekly_summary(12),
+        "drawdown": max((e.get("drawdown_pct", 0) for e in equity), default=0),
     }
 
 

@@ -28,24 +28,33 @@ class StrategyAgent:
         self._last_discovery_hour = -1
         self._last_discovery_date = ""
         self._highest_price: dict[str, float] = {}  # trailing stop tracker
+        self._position_entry_time: dict[str, float] = {}  # min hold time tracker
+        self._consecutive_losses = 0
+        self._loss_cooldown_until = 0.0
+        self._daily_loss = 0.0
+        self._daily_loss_date = ""
         settings_store.on_change(self._on_settings_change)
 
     def _load_config(self, cfg: dict | None = None):
         if cfg is None:
             cfg = settings_store.current()
-        self.signal_cooldown = int(cfg.get("signal_cooldown", 120))
+        self.signal_cooldown = int(cfg.get("signal_cooldown", 300))
         self.max_position_pct = float(cfg.get("position_size_pct", 5))
         self.max_positions = int(cfg.get("max_positions", 3))
         self.take_profit_pct = float(cfg.get("take_profit_pct", 2.0))
-        self.stop_loss_pct = float(cfg.get("stop_loss_pct", 3.0))
+        self.stop_loss_pct = float(cfg.get("stop_loss_pct", 0.5))
         self.rsi_period = int(cfg.get("rsi_period", 14))
-        self.rsi_oversold = float(cfg.get("rsi_oversold", 55))
+        self.rsi_oversold = float(cfg.get("rsi_oversold", 40))
         self.rsi_overbought = float(cfg.get("rsi_overbought", 70))
-        self.min_drop_pct = float(cfg.get("min_drop_pct", 0.2))
+        self.min_drop_pct = float(cfg.get("min_drop_pct", 0.5))
         self.force_trade_sec = int(cfg.get("force_trade_sec", 300))
+        self.min_hold_time = int(cfg.get("min_hold_time", 300))
+        self.min_price_delta_pct = float(cfg.get("min_price_delta_pct", 0.1))
+        self.daily_loss_limit_pct = float(cfg.get("daily_loss_limit_pct", 2.0))
+        self.short_enabled = bool(cfg.get("short_enabled", False))
         self.redis_url = os.getenv("REDIS_ADDR", "redis://redis:6379")
         self.memory_url = os.getenv("MEMORY_URL", "http://memory:8000")
-        logger.info(f"Strategy config loaded: max_pos={self.max_positions} RSI_oversold={self.rsi_oversold} cooldown={self.signal_cooldown}s")
+        logger.info(f"Strategy config loaded: max_pos={self.max_positions} RSI_oversold={self.rsi_oversold} cooldown={self.signal_cooldown}s stop_loss={self.stop_loss_pct}%")
 
     def _on_settings_change(self, cfg: dict):
         self._load_config(cfg)
@@ -78,6 +87,9 @@ class StrategyAgent:
         logger.info("Strategy Agent started — scanning market for signals...")
         last_heartbeat = 0
 
+        # Background: listen for trade results to track consecutive losses
+        asyncio.create_task(self._listen_trade_results())
+
         while True:
             await asyncio.sleep(15)
 
@@ -98,6 +110,28 @@ class StrategyAgent:
 
             had_signal = False
 
+            # Daily loss limit check
+            today_key = self._trading_day_key()
+            if today_key != self._daily_loss_date:
+                self._daily_loss = 0.0
+                self._daily_loss_date = today_key
+                self._daily_start_equity = wallet_instance.total_equity
+
+            current_equity = wallet_instance.total_equity
+            if hasattr(self, '_daily_start_equity') and current_equity > 0:
+                daily_pnl = current_equity - self._daily_start_equity
+                if daily_pnl < 0 and abs(daily_pnl) / self._daily_start_equity * 100 >= self.daily_loss_limit_pct:
+                    logger.warning(f"DAILY LOSS LIMIT HIT: {daily_pnl/self._daily_start_equity*100:.2f}% — halting trades")
+                    await asyncio.sleep(60)
+                    continue
+
+            # Consecutive loss cooldown
+            loop_now = asyncio.get_event_loop().time()
+            if self._loss_cooldown_until > 0 and loop_now < self._loss_cooldown_until:
+                pass  # skip signal generation during cooldown, but still allow exits
+            else:
+                self._loss_cooldown_until = 0.0  # reset expired cooldown
+
             for ticker, prices in self.price_history.items():
                 if len(prices) < self.rsi_period:
                     continue
@@ -114,15 +148,24 @@ class StrategyAgent:
                 rsi = self._calc_rsi(list(prices))
 
                 signal = None
-                if open_count < self.max_positions and rsi < self.rsi_oversold and change_pct < -self.min_drop_pct:
-                    # Multi-timeframe confirmation: 1m, 5m, 15m RSI all oversold
-                    if self._confirm_multiframe_rsi(list(prices)):
-                        # MACD bullish crossover check
-                        if self._check_macd_bullish(list(prices)):
-                            signal = {"direction": "BUY", "reason": f"MTF RSI={rsi:.0f} MACD bullish change={change_pct:+.2f}%"}
-                    elif self._check_bb_oversold(list(prices), current):
-                        signal = {"direction": "BUY", "reason": f"BB oversold RSI={rsi:.0f} bounce at {current:.2f}"}
-                elif ticker in wallet_instance.positions:
+
+                # BUY signals (only eval during non-loss-cooldown)
+                if self._loss_cooldown_until == 0.0:
+                    if open_count < self.max_positions and rsi < self.rsi_oversold and change_pct < -self.min_drop_pct:
+                        # Multi-timeframe confirmation: 1m, 5m, 15m RSI all oversold
+                        if self._confirm_multiframe_rsi(list(prices)):
+                            if self._check_macd_bullish(list(prices)):
+                                signal = {"direction": "BUY", "reason": f"MTF RSI={rsi:.0f} MACD bullish change={change_pct:+.2f}%"}
+                        elif self._check_bb_oversold(list(prices), current) and self._confirm_volume(list(prices)):
+                            signal = {"direction": "BUY", "reason": f"BB oversold RSI={rsi:.0f} bounce at {current:.2f}"}
+
+                    # SHORT signals (if enabled)
+                    if not signal and self.short_enabled and open_count < self.max_positions and rsi > self.rsi_overbought and change_pct > self.min_drop_pct:
+                        if self._check_bb_overbought(list(prices), current) and self._confirm_volume(list(prices)):
+                            signal = {"direction": "SELL", "reason": f"BB overbought RSI={rsi:.0f} short at {current:.2f}"}
+
+                # SELL exits for open positions
+                if not signal and ticker in wallet_instance.positions:
                     pos = wallet_instance.positions[ticker]
                     pos_change = ((current - pos.avg_price) / pos.avg_price) * 100
                     if pos_change >= self.take_profit_pct:
@@ -132,7 +175,14 @@ class StrategyAgent:
                     elif self._check_trailing_stop(ticker, current, pos.avg_price):
                         signal = {"direction": "SELL", "reason": f"Trailing stop triggered at {current:.2f}"}
                     elif self._check_bb_overbought(list(prices), current):
-                        signal = {"direction": "SELL", "reason": f"BB overbought at {current:.2f}"}
+                        entry_time = self._position_entry_time.get(ticker, 0)
+                        hold_sec = now - entry_time if entry_time > 0 else 999
+                        delta_pct = abs(pos_change)
+                        if hold_sec < self.min_hold_time:
+                            continue  # skip BB exit within min hold time
+                        if delta_pct < self.min_price_delta_pct:
+                            continue  # skip BB exit with no real price movement
+                        signal = {"direction": "SELL", "reason": f"BB overbought at {current:.2f} (held {hold_sec:.0f}s, chg={pos_change:+.2f}%)"}
 
                 if not signal:
                     continue
@@ -146,7 +196,11 @@ class StrategyAgent:
                 if signal["direction"] == "BUY" and notional > wallet_instance.available:
                     continue
                 if signal["direction"] == "SELL" and ticker not in wallet_instance.positions:
-                    continue
+                    # Only block if this is an EXIT sell (not a short entry)
+                    if self.short_enabled and open_count < self.max_positions:
+                        pass  # allow short entry
+                    else:
+                        continue
 
                 # Pre-trade checks
                 if signal["direction"] == "BUY":
@@ -169,12 +223,15 @@ class StrategyAgent:
 
                 await self._publish_trade(trade)
                 self.last_signal[ticker] = now
-                if signal["direction"] == "SELL":
+                if signal["direction"] == "BUY":
+                    self._position_entry_time[ticker] = now  # track entry time for min hold
+                elif signal["direction"] == "SELL":
                     self._highest_price.pop(ticker, None)  # reset trailing stop tracker
+                    self._position_entry_time.pop(ticker, None)
                 logger.info(f"Strategy: {ticker} {signal['direction']} qty={qty} @ {current:.2f} — {signal['reason']}")
 
             # If no natural signal, pick best opportunity across all tickers
-            if not had_signal:
+            if not had_signal and self._loss_cooldown_until == 0.0:
                 now = asyncio.get_event_loop().time()
                 if self.force_trade_sec > 0 and now - self._last_forced_trade > self.force_trade_sec:
                     await self._pick_best_trade(open_count)
@@ -362,6 +419,23 @@ class StrategyAgent:
         if upper <= 0:
             return False
         return current >= upper * 0.995 and len(prices) >= 20
+
+    def _confirm_volume(self, prices: list[float]) -> bool:
+        """Volume proxy: Z-Score of price range > 1.0 to confirm genuine momentum."""
+        if len(prices) < 14:
+            return False
+        ranges = [abs(prices[i] - prices[i-1]) for i in range(1, len(prices))]
+        recent = ranges[-14:]
+        avg_range = sum(recent) / len(recent)
+        if avg_range == 0:
+            return False
+        variance = sum((r - avg_range) ** 2 for r in recent) / len(recent)
+        std_range = variance ** 0.5
+        if std_range == 0:
+            return False
+        current_range = ranges[-1]
+        z_score = (current_range - avg_range) / std_range
+        return z_score > 1.0
 
     # ── Market Regime Detection (ADX + ATR) ──
 
@@ -560,3 +634,36 @@ class StrategyAgent:
             await r.aclose()
         except Exception as e:
             logger.error(f"Failed to publish trade: {e}")
+
+    async def _listen_trade_results(self):
+        """Background task: subscribes to trade:result to track consecutive losses."""
+        import redis.asyncio as redis
+        while True:
+            try:
+                r = redis.Redis.from_url(self.redis_url)
+                pubsub = r.pubsub()
+                await pubsub.subscribe("trade:result")
+                logger.info("Strategy: listening on trade:result for loss tracking")
+                async for msg in pubsub.listen():
+                    if msg["type"] != "message":
+                        continue
+                    try:
+                        data = json.loads(msg["data"])
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    status = data.get("status", "")
+                    pnl = float(data.get("pnl_percent", 0))
+                    if status == "LOSS" and pnl < 0:
+                        self._consecutive_losses += 1
+                        logger.info(f"Strategy: consecutive losses = {self._consecutive_losses}")
+                        if self._consecutive_losses >= 3:
+                            cooldown = asyncio.get_event_loop().time() + 600
+                            self._loss_cooldown_until = cooldown
+                            logger.warning(f"Strategy: 3+ consecutive losses — cooldown until {cooldown:.0f}")
+                    elif status == "WIN":
+                        self._consecutive_losses = 0
+                await pubsub.unsubscribe("trade:result")
+                await r.aclose()
+            except Exception as e:
+                logger.error(f"Strategy: trade:result listener error: {e}")
+                await asyncio.sleep(10)

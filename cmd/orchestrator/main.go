@@ -42,6 +42,7 @@ type TradeResult struct {
 	PnLPct     float64 `json:"pnl_percent"`
 	Status     string  `json:"status"`
 	Timestamp  string  `json:"timestamp"`
+	Reason     string  `json:"reason,omitempty"`
 }
 
 type PreTradeQuery struct {
@@ -175,11 +176,17 @@ func signalLoop(ctx context.Context, rdb *redis.Client, tg *telegram.Bot, memory
 			}
 
 			if result.Status == "LOSS" {
-				log.Printf("Loss detected: %s %.2f%% — running postmortem...", result.Ticker, result.PnLPct)
-				runPostMortem(result, memoryURL)
+				if math.Abs(result.PnLPct) >= 0.1 {
+					log.Printf("Loss detected: %s %.2f%% — running postmortem...", result.Ticker, result.PnLPct)
+					runPostMortem(result, memoryURL)
+				} else {
+					log.Printf("Minor loss: %s %.2f%% — skipping postmortem", result.Ticker, result.PnLPct)
+				}
 				tg.SendTradeAlert(result.Ticker, result.Direction, result.EntryPrice, result.ExitPrice, result.Quantity, result.PnLPct, result.Status)
 			} else if result.Status == "WIN" {
 				tg.SendTradeAlert(result.Ticker, result.Direction, result.EntryPrice, result.ExitPrice, result.Quantity, result.PnLPct, result.Status)
+			} else if result.Status == "REJECTED" {
+				log.Printf("Trade REJECTED: %s %s (no open position)", result.Ticker, result.Direction)
 			} else {
 				log.Printf("Trade: %s %s @ %.2f [%s]", result.Ticker, result.Direction, result.EntryPrice, result.Status)
 			}
@@ -305,6 +312,11 @@ func runPostMortem(result TradeResult, memoryURL string) {
 		dir = "SHORT"
 	}
 
+	coreRule := result.Reason
+	if coreRule == "" {
+		coreRule = "Unknown strategy signal"
+	}
+
 	marketState := fetchMarketState(result.Ticker, memoryURL)
 	if marketState == nil {
 		marketState = map[string]float64{
@@ -323,10 +335,11 @@ func runPostMortem(result TradeResult, memoryURL string) {
 			"exit_price":  result.ExitPrice,
 			"quantity":    result.Quantity,
 			"pnl_percent": result.PnLPct,
+			"reason":      result.Reason,
 		},
 		"strategy_intent": map[string]any{
-			"core_rule":       "Breakout buy above previous day high",
-			"indicators_used": []string{"RSI", "MACD", "Volume"},
+			"core_rule":       coreRule,
+			"indicators_used": []string{"RSI", "MACD", "BB", "Volume"},
 		},
 	}
 

@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
 
+    # Production risk controls
+    min_hold_time: int = 300
+    min_price_delta_pct: float = 0.1
+    daily_loss_limit_pct: float = 2.0
+    postmortem_min_loss_pct: float = 0.1
+    short_enabled: bool = False
+
     # Infrastructure
     lance_db_path: str = "./data/lancedb"
     critic_port: int = 8000

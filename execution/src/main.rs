@@ -262,32 +262,32 @@ async fn signal_loop(
                     let pos = positions.remove(&ticker);
                     let exit_price = signal.price;  // strategy sends current yfinance price
 
-                    let (pnl_pct, status) = if let Some(pos) = pos {
+                    let (entry_price, pnl_pct, status, should_publish) = if let Some(pos) = pos {
                         let pnl = (exit_price - pos.entry_price) / pos.entry_price * 100.0;
                         let s = if pnl >= 0.0 { "WIN" } else { "LOSS" };
                         info!("Position closed: {} entry={:.2} exit={:.2} pnl={:+.2}% (remaining: {})", ticker, pos.entry_price, exit_price, pnl, positions.len());
-                        (pnl, s)
+                        (pos.entry_price, pnl, s.to_string(), true)
                     } else {
-                        // No open position tracked — use signal price as reference
-                        let pnl = (exit_price - signal.price) / signal.price * 100.0;
-                        let s = if pnl >= 0.0 { "WIN" } else { "LOSS" };
-                        warn!("No open position for {} — using signal price as entry", ticker);
-                        (pnl, s)
+                        // No open position tracked — reject orphaned sell, don't publish bogus result
+                        warn!("No open position for {} — rejecting orphaned SELL signal", ticker);
+                        (signal.price, 0.0, "REJECTED".to_string(), false)
                     };
 
-                    let result = TradeResult {
-                        order_id: order.id.clone(),
-                        ticker,
-                        direction: "SELL".into(),
-                        entry_price: signal.price,
-                        exit_price: (exit_price * 100.0).round() / 100.0,
-                        quantity: signal.quantity,
-                        pnl_percent: (pnl_pct * 100.0).round() / 100.0,
-                        status: status.to_string(),
-                        timestamp: now,
-                    };
-                    let result_json = serde_json::to_string(&result).unwrap();
-                    let _: () = pub_conn.publish("trade:result", result_json).await?;
+                    if should_publish {
+                        let result = TradeResult {
+                            order_id: order.id.clone(),
+                            ticker,
+                            direction: "SELL".into(),
+                            entry_price,
+                            exit_price: (exit_price * 100.0).round() / 100.0,
+                            quantity: signal.quantity,
+                            pnl_percent: (pnl_pct * 100.0).round() / 100.0,
+                            status,
+                            timestamp: now,
+                        };
+                        let result_json = serde_json::to_string(&result).unwrap();
+                        let _: () = pub_conn.publish("trade:result", result_json).await?;
+                    }
                 }
             }
             Err(e) => {

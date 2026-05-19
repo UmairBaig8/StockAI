@@ -13,10 +13,11 @@ type Schedule struct {
 }
 
 type Scheduler struct {
-	mu     sync.Mutex
-	tasks  map[string]Task
-	loc    *time.Location
-	stopCh chan struct{}
+	mu      sync.Mutex
+	tasks   map[string]Task
+	loc     *time.Location
+	stopCh  chan struct{}
+	lastRun map[string]string // task name -> "2006-01-02 15:04" last fired
 }
 
 type Task struct {
@@ -30,9 +31,10 @@ func New() *Scheduler {
 		loc = time.FixedZone("IST", 5*3600+30*60)
 	}
 	return &Scheduler{
-		tasks:  make(map[string]Task),
-		loc:    loc,
-		stopCh: make(chan struct{}),
+		tasks:   make(map[string]Task),
+		loc:     loc,
+		stopCh:  make(chan struct{}),
+		lastRun: make(map[string]string),
 	}
 }
 
@@ -73,10 +75,15 @@ func (s *Scheduler) checkAndRun(now time.Time) {
 	defer s.mu.Unlock()
 
 	currentKey := now.Format("1504")
+	currentMinute := now.Format("2006-01-02 15:04")
 
 	for name, task := range s.tasks {
 		taskKey := fmt.Sprintf("%02d%02d", task.Schedule.Hour, task.Schedule.Minute)
 		if currentKey == taskKey {
+			if s.lastRun[name] == currentMinute {
+				continue // already fired this minute
+			}
+			s.lastRun[name] = currentMinute
 			log.Printf("Scheduler: triggering task %q at %s", name, now.Format(time.RFC3339))
 			go task.Fn()
 		}

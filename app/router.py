@@ -435,12 +435,13 @@ async def scan_options(request: dict):
 @router.post("/optimize", response_model=dict)
 async def optimize_strategy(
     request: dict,
-    settings: Settings = Depends(get_settings),
 ):
     from .optimizer import OptimizerAgent
     from .db import get_trades
     from .settings_store import current as get_config
+    from .config import get_settings
 
+    settings = get_settings()
     days = request.get("days", 7)
     trades = await get_trades(limit=500)
     # Filter last N days

@@ -53,7 +53,10 @@ Reply ONLY with valid JSON:
 
 
 class OptimizerAgent:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings):
+        from .config import get_settings as _gs
+        if isinstance(settings, dict):
+            settings = _gs()
         self.settings = settings
         self.llm: LLMAdapter = create_llm_for_agent(settings, "critic")  # reuse critic LLM
 

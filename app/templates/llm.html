@@ -34,6 +34,9 @@
       <h1>LLM Providers <span>connection status</span></h1>
       <div class="summary" id="summary-row"></div>
       <div id="provider-list">Loading...</div>
+      <h2 style="margin-top:24px">LLM Call Traces <span id="trace-summary"></span></h2>
+      <div id="agent-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+      <div style="overflow-x:auto"><table style="width:100%;font-size:0.65rem"><thead><tr><th>Time</th><th>Agent</th><th>Provider</th><th>Prompt</th><th>Resp</th><th>Latency</th><th>Status</th></tr></thead><tbody id="trace-body"><tr><td colspan="7" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
     </main>
   </div>
 </div>
@@ -53,7 +56,34 @@ async function load(){
         ${ok?`<span class="active-badge">OK</span>`:`<span class="inactive-badge">OFF</span>`}
       </div>`}).join('');
   }catch(e){}
-}load();
+  loadTraces();
+}
+async function loadTraces(){
+  try{
+    const r=await fetch('/api/v1/llm/traces?limit=50');
+    const d=await r.json();
+    const s=d.summary;
+    document.getElementById('trace-summary').innerHTML=`${s.total_calls} calls · ${s.success} OK · ${s.errors} errors · ~${s.prompt_tokens_est}+${s.response_tokens_est} tokens est`;
+    const agents=d.by_agent||{};
+    document.getElementById('agent-stats').innerHTML=Object.entries(agents).map(([a,st])=>
+      `<div class="stat" style="flex:0 0 auto;min-width:90px"><span class="val" style="font-size:0.9rem">${st.calls}</span><span class="lbl">${a} (${st.avg_latency_ms}ms)</span></div>`
+    ).join('');
+    const traces=d.traces||[];
+    document.getElementById('trace-body').innerHTML=traces.reverse().map(t=>
+      `<tr>
+        <td>${new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false})}</td>
+        <td>${t.agent}</td>
+        <td>${t.provider}/${t.model}</td>
+        <td>~${t.prompt_tokens_est}</td>
+        <td>~${t.response_tokens_est}</td>
+        <td>${t.latency_ms}ms</td>
+        <td style="color:${t.success?'var(--accent)':'var(--err)'}">${t.success?'OK':t.error||'FAIL'}</td>
+      </tr>`
+    ).join('');
+  }catch(e){document.getElementById('trace-body').innerHTML='<tr><td colspan="7" style="color:var(--err)">Error loading traces</td></tr>'}
+}
+load();
+setInterval(loadTraces,15000);
 </script>
 </body>
 </html>

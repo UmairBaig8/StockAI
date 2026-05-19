@@ -1,16 +1,44 @@
 import json
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
+from collections import deque
+from datetime import datetime, timezone
 from typing import Optional
 
 from . import LLMProvider
 
 logger = logging.getLogger(__name__)
 
+# Circular buffer for LLM traces (last 200 calls)
+_trace_buffer: deque[dict] = deque(maxlen=200)
+
+
+def _record_trace(agent: str, provider: str, model: str, prompt_chars: int,
+                  response_chars: int, latency_ms: float, success: bool, error: str = ""):
+    _trace_buffer.append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "agent": agent,
+        "provider": provider,
+        "model": model,
+        "prompt_tokens_est": max(1, prompt_chars // 4),
+        "response_tokens_est": max(1, response_chars // 4),
+        "latency_ms": round(latency_ms, 1),
+        "success": success,
+        "error": error[:200] if error else "",
+    })
+
+
+def get_traces(limit: int = 100) -> list[dict]:
+    items = list(_trace_buffer)
+    return items[-limit:]
+
 
 class LLMAdapter(ABC):
     provider: LLMProvider
+    agent_name: str = "unknown"
+    model_name: str = "unknown"
 
     @abstractmethod
     def generate(
@@ -36,9 +64,21 @@ class LLMAdapter(ABC):
         temperature: float = 0.3,
         max_tokens: int = 1024,
     ) -> dict:
-        text = self.generate(system_prompt, user_prompt, temperature, max_tokens)
-        text = self._strip_code_fences(text)
-        return json.loads(text)
+        prompt_chars = len(system_prompt) + len(user_prompt)
+        t0 = time.monotonic()
+        try:
+            text = self.generate(system_prompt, user_prompt, temperature, max_tokens)
+            elapsed = (time.monotonic() - t0) * 1000
+            text = self._strip_code_fences(text)
+            result = json.loads(text)
+            _record_trace(self.agent_name, self.provider.value, self.model_name,
+                         prompt_chars, len(text), elapsed, True)
+            return result
+        except Exception as e:
+            elapsed = (time.monotonic() - t0) * 1000
+            _record_trace(self.agent_name, self.provider.value, self.model_name,
+                         prompt_chars, 0, elapsed, False, str(e))
+            raise
 
 
 class GeminiAdapter(LLMAdapter):
@@ -212,33 +252,31 @@ def create_llm_for_agent(settings, agent: str) -> LLMAdapter:
     provider = settings.agent_provider(agent)
 
     if provider == LLMProvider.GEMINI:
-        return GeminiAdapter(api_key=settings.gemini_api_key, model=settings.gemini_model)
-
-    if provider == LLMProvider.OPENAI:
-        return OpenAIAdapter(
+        llm = GeminiAdapter(api_key=settings.gemini_api_key, model=settings.gemini_model)
+    elif provider == LLMProvider.OPENAI:
+        llm = OpenAIAdapter(
             api_key=settings.openai_api_key,
             model=settings.openai_model,
             base_url=settings.openai_base_url or None,
         )
-
-    if provider == LLMProvider.ANTHROPIC:
-        return AnthropicAdapter(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
-
-    if provider == LLMProvider.DEEPSEEK:
-        return DeepSeekAdapter(api_key=settings.deepseek_api_key, model=settings.deepseek_model)
-
-    if provider == LLMProvider.BEDROCK:
-        return BedrockAdapter(
+    elif provider == LLMProvider.ANTHROPIC:
+        llm = AnthropicAdapter(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
+    elif provider == LLMProvider.DEEPSEEK:
+        llm = DeepSeekAdapter(api_key=settings.deepseek_api_key, model=settings.deepseek_model)
+    elif provider == LLMProvider.BEDROCK:
+        llm = BedrockAdapter(
             aws_access_key=settings.aws_access_key_id,
             aws_secret_key=settings.aws_secret_access_key,
             region=settings.aws_region,
             model=settings.bedrock_model,
         )
+    elif provider == LLMProvider.OLLAMA:
+        llm = OllamaAdapter(base_url=settings.ollama_base_url, model=settings.ollama_model)
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider}")
 
-    if provider == LLMProvider.OLLAMA:
-        return OllamaAdapter(base_url=settings.ollama_base_url, model=settings.ollama_model)
-
-    raise ValueError(f"Unknown LLM provider: {provider}")
+    llm.agent_name = agent
+    return llm
 
 
 # ── LLM Health Check ──

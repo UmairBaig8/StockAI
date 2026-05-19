@@ -359,6 +359,41 @@ async def llm_health():
     return {"providers": health, "available": available, "active": active, "total_configured": len(available)}
 
 
+@router.get("/llm/traces", response_model=dict)
+async def llm_traces(limit: int = 100):
+    from .llm.providers import get_traces
+    traces = get_traces(limit)
+    # Aggregate stats
+    agents = {}
+    total_calls = len(traces)
+    total_ok = sum(1 for t in traces if t["success"])
+    total_prompt = sum(t["prompt_tokens_est"] for t in traces)
+    total_response = sum(t["response_tokens_est"] for t in traces)
+    for t in traces:
+        a = t["agent"]
+        if a not in agents:
+            agents[a] = {"calls": 0, "errors": 0, "prompt_tokens": 0, "response_tokens": 0, "total_latency_ms": 0}
+        agents[a]["calls"] += 1
+        if not t["success"]:
+            agents[a]["errors"] += 1
+        agents[a]["prompt_tokens"] += t["prompt_tokens_est"]
+        agents[a]["response_tokens"] += t["response_tokens_est"]
+        agents[a]["total_latency_ms"] += t["latency_ms"]
+    for a in agents:
+        agents[a]["avg_latency_ms"] = round(agents[a]["total_latency_ms"] / agents[a]["calls"], 1)
+    return {
+        "summary": {
+            "total_calls": total_calls,
+            "success": total_ok,
+            "errors": total_calls - total_ok,
+            "prompt_tokens_est": total_prompt,
+            "response_tokens_est": total_response,
+        },
+        "by_agent": agents,
+        "traces": traces,
+    }
+
+
 # === History (PostgreSQL) ===
 
 @router.get("/history", response_model=dict)
@@ -452,8 +487,76 @@ async def optimize_strategy(
     agent = OptimizerAgent(settings)
     result = await agent.analyze_week(recent, current_params)
 
+    # Store recommendations for approve/reject
+    suggestions = result.get("suggestions", [])
+    if suggestions:
+        _recommendations.clear()
+        for s in suggestions:
+            _recommendations.append({
+                "parameter": s.get("parameter"),
+                "current": s.get("current"),
+                "suggested": s.get("suggested"),
+                "reason": s.get("reason", ""),
+                "status": "pending",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
     return {
         "trades_analyzed": len(recent),
         "period_days": days,
         "optimization": result,
     }
+
+
+# === Recommendations (approve/reject optimizer suggestions) ===
+
+_recommendations: list[dict] = []
+
+
+@router.get("/recommendations", response_model=dict)
+async def get_recommendations():
+    return {"recommendations": _recommendations}
+
+
+@router.post("/recommendations/approve", response_model=dict)
+async def approve_recommendation(request: dict):
+    idx = request.get("index", -1)
+    if 0 <= idx < len(_recommendations):
+        rec = _recommendations[idx]
+        rec["status"] = "approved"
+        param = rec.get("parameter")
+        suggested = rec.get("suggested")
+        if param and suggested is not None:
+            cfg = settings_store.current()
+            cfg[param] = suggested
+            settings_store.save(cfg)
+            logger.info(f"Applied recommendation: {param} = {suggested}")
+        return {"ok": True, "recommendation": rec}
+    return {"ok": False, "error": "Invalid index"}
+
+
+@router.post("/recommendations/reject", response_model=dict)
+async def reject_recommendation(request: dict):
+    idx = request.get("index", -1)
+    if 0 <= idx < len(_recommendations):
+        _recommendations[idx]["status"] = "rejected"
+        return {"ok": True, "recommendation": _recommendations[idx]}
+    return {"ok": False, "error": "Invalid index"}
+
+
+@router.post("/recommendations/approve-all", response_model=dict)
+async def approve_all_recommendations():
+    applied = 0
+    cfg = settings_store.current()
+    for rec in _recommendations:
+        if rec.get("status") == "pending":
+            param = rec.get("parameter")
+            suggested = rec.get("suggested")
+            if param and suggested is not None:
+                cfg[param] = suggested
+                rec["status"] = "approved"
+                applied += 1
+    if applied > 0:
+        settings_store.save(cfg)
+        logger.info(f"Applied {applied} recommendations")
+    return {"ok": True, "applied": applied}

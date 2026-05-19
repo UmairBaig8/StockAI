@@ -1,9 +1,13 @@
 {% block content %}
 <style>
-  .news-item .tickers span{display:inline-block;background:var(--bg);color:var(--accent);font-size:0.64rem;padding:2px 8px;border-radius:999px;margin-right:4px;font-weight:700}
+  .news-item .tickers{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+  .news-item .tickers span{display:inline-block;background:var(--accent-soft);color:var(--accent);font-size:0.64rem;padding:2px 8px;border-radius:999px;font-weight:700}
+  .news-item .tickers span.general{background:rgba(255,255,255,0.04);color:var(--muted);border:1px solid var(--border-soft)}
   .news-item .title{font-size:0.92rem;color:var(--fg);margin-bottom:4px;letter-spacing:-0.02em}
-  .news-item .summary{font-size:0.76rem;color:var(--muted);margin-bottom:4px;line-height:1.5}
-  .news-item .meta a{font-size:0.66rem;color:var(--accent)}
+  .news-item .summary{font-size:0.76rem;color:var(--muted);margin-bottom:6px;line-height:1.5}
+  .news-item .meta{display:flex;gap:12px;align-items:center;font-size:0.66rem;color:var(--muted)}
+  .news-item .meta a{color:var(--accent)}
+  .age{color:var(--muted);font-size:0.62rem}
 </style>
 
 <header>
@@ -19,6 +23,12 @@
 {% endblock %}
 <script>
 let newsItems=[];
+function timeAgo(dateStr){
+  if(!dateStr)return'';
+  const diff=Date.now()-new Date(dateStr).getTime();
+  const m=Math.floor(diff/60000),h=Math.floor(m/60),d=Math.floor(h/24),w=Math.floor(d/7),mo=Math.floor(d/30),y=Math.floor(d/365);
+  if(y>0)return y+'y ago';if(mo>0)return mo+'mo ago';if(w>0)return w+'w ago';if(d>0)return d+'d ago';if(h>0)return h+'h ago';if(m>0)return m+'m ago';return'just now';
+}
 async function fetchNews(){
   document.getElementById('status').textContent='Fetching...';
   try{const r=await fetch('/api/v1/news');const d=await r.json();newsItems=d.items||[];
@@ -31,10 +41,12 @@ function render(){
   const filtered=newsItems.filter(i=>!q||i.title.toUpperCase().includes(q)||(i.tickers||[]).some(t=>t.includes(q)));
   if(!filtered.length){document.getElementById('news-list').innerHTML='<div class="loading">No articles match</div>';return}
   document.getElementById('news-list').innerHTML=filtered.map(i=>{
-    const tkrs=(i.tickers||[]).slice(0,4).map(t=>`<span>$${t}</span>`).join('');
+    const hasTicker=i.tickers&&i.tickers.length;
+    const tkrs=hasTicker?i.tickers.slice(0,4).map(t=>`<span>$${t}</span>`).join(''):'<span class="general">general</span>';
     const sum=i.summary?`<div class="summary">${i.summary.slice(0,200)}</div>`:'';
     const link=i.link?`<a href="${i.link}" target="_blank" rel="noopener">Read</a>`:'';
-    return `<div class="news-item"><div class="tickers">${tkrs||'<span style="background:transparent;color:var(--muted)">general</span>'}</div><div class="title">${i.title}</div>${sum}<div class="meta"><span>${i.published||''}</span>${link}</div></div>`;
+    const ago=timeAgo(i.published);
+    return `<div class="news-item"><div class="tickers">${tkrs}</div><div class="title">${i.title}</div>${sum}<div class="meta"><span>${i.published||''}</span>${ago?`<span class="age">${ago}</span>`:''}${link}</div></div>`;
   }).join('');
 }
 fetchNews();setInterval(fetchNews,120000);

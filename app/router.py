@@ -154,10 +154,7 @@ async def dash(store: VectorStore = Depends(get_store), settings: Settings = Dep
             wins = db_summary.get("wins", 0)
             losses = db_summary.get("losses", 0)
             total_pnl_amount = db_summary.get("pnl", 0)
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("SELECT COALESCE(SUM(entry_price * quantity), 0) as invested FROM trades")
-                total_invested = float(row["invested"]) if row else 0
+            total_invested = 100000  # initial capital — DB P&L is net since inception
             total_pnl_pct = (total_pnl_amount / total_invested * 100) if total_invested > 0 else 0
         except Exception:
             pass

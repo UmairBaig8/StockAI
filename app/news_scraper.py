@@ -12,9 +12,10 @@ logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
 
 RSS_FEEDS = [
-    "https://www.moneycontrol.com/rss/business.xml",
-    "https://www.moneycontrol.com/rss/Marketreports.xml",
     "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms",
+    "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+    "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146843.cms",
+    "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146846.cms",
 ]
 
 NSE_TICKER_PATTERN = re.compile(r'\b([A-Z]{2,20})\b')  # kept for reference
@@ -101,7 +102,7 @@ async def _fetch_feed(url: str) -> list[dict]:
     try:
         loop = asyncio.get_event_loop()
         feed = await loop.run_in_executor(None, lambda: feedparser.parse(url))
-        for entry in feed.entries[:10]:
+        for entry in feed.entries[:25]:
             title = entry.get("title", "")
             summary = entry.get("summary", entry.get("description", ""))
             link = entry.get("link", "")

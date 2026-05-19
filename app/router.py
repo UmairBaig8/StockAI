@@ -515,9 +515,8 @@ async def bedrock_models():
             aws_secret_access_key=settings.aws_secret_access_key,
         )
         models = []
-        paginator = client.get_paginator("list_foundation_models")
-        for page in paginator.paginate():
-            for m in page["modelSummaries"]:
+        resp = client.list_foundation_models()
+        for m in resp.get("modelSummaries", []):
                 status = m.get("modelLifecycle", {}).get("status", "")
                 if status != "ACTIVE":
                     continue

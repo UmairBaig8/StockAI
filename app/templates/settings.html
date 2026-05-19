@@ -41,11 +41,11 @@
     <div class="field-row">
       <div class="field">
         <label for="llm_provider">Provider</label>
-        <select id="llm_provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option><option value="bedrock">AWS Bedrock</option><option value="ollama">Ollama (local)</option></select>
+        <select id="llm_provider" onchange="onProviderChange()"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option><option value="bedrock">AWS Bedrock</option><option value="ollama">Ollama (local)</option></select>
       </div>
       <div class="field">
         <label for="llm_model">Model</label>
-        <input type="text" id="llm_model" placeholder="deepseek-chat">
+        <div id="model-input-wrapper"><input type="text" id="llm_model" placeholder="deepseek-chat"></div>
       </div>
     </div>
   </div>
@@ -137,6 +137,31 @@
 
   loadSettings();
   checkLLMStatus();
+
+  async function onProviderChange(){
+    const prov=document.getElementById('llm_provider').value;
+    const wrapper=document.getElementById('model-input-wrapper');
+    if(prov==='bedrock'){
+      wrapper.innerHTML='<select id="llm_model" style="width:100%"><option>Loading models...</option></select>';
+      try{
+        const r=await fetch('/api/v1/llm/bedrock-models');
+        const d=await r.json();
+        const models=d.models||[];
+        const grouped={};
+        models.forEach(m=>{const p=m.provider;if(!grouped[p])grouped[p]=[];grouped[p].push(m)});
+        let opts='<option value="">Select model...</option>';
+        Object.entries(grouped).forEach(([prov,ms])=>{
+          opts+=`<optgroup label="${prov}">`;
+          ms.forEach(m=>{opts+=`<option value="${m.id}">${m.label}</option>`});
+          opts+='</optgroup>';
+        });
+        wrapper.innerHTML='<select id="llm_model" style="width:100%">'+opts+'</select>';
+      }catch(e){wrapper.innerHTML='<input type="text" id="llm_model" placeholder="model-id">'}
+    }else{
+      const cur=document.getElementById('llm_model')?.value||'';
+      wrapper.innerHTML=`<input type="text" id="llm_model" value="${cur}" placeholder="deepseek-chat">`;
+    }
+  }
 
   async function checkLLMStatus(){
     try{

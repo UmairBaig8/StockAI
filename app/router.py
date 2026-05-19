@@ -501,6 +501,48 @@ async def run_backtest(request: dict):
     return result
 
 
+@router.get("/llm/bedrock-models", response_model=dict)
+async def bedrock_models():
+    """List available Bedrock ON_DEMAND models grouped by provider."""
+    try:
+        import boto3
+        from .config import get_settings
+        settings = get_settings()
+        client = boto3.client(
+            "bedrock",
+            region_name=settings.aws_region,
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+        )
+        models = []
+        paginator = client.get_paginator("list_foundation_models")
+        for page in paginator.paginate():
+            for m in page["modelSummaries"]:
+                status = m.get("modelLifecycle", {}).get("status", "")
+                if status != "ACTIVE":
+                    continue
+                types = m.get("inferenceTypesSupported", [])
+                if "ON_DEMAND" not in types:
+                    continue
+                mid = m["modelId"]
+                provider = m.get("providerName", "Other")
+                # Short label
+                label = mid.replace(".", " ").replace("-", " ").replace(":", "")
+                label = " ".join(w.capitalize() if i == 0 else w for i, w in enumerate(label.split()))[:40]
+                models.append({
+                    "id": mid,
+                    "label": label,
+                    "provider": provider,
+                    "provider_short": provider.split()[0],
+                })
+        # Sort by provider then model
+        models.sort(key=lambda x: (x["provider"], x["id"]))
+        providers = sorted(set(m["provider_short"] for m in models))
+        return {"models": models, "providers": providers, "count": len(models)}
+    except Exception as e:
+        return {"models": [], "providers": [], "count": 0, "error": str(e)}
+
+
 # === Options Flow ===
 
 @router.get("/options/{ticker}", response_model=dict)

@@ -182,6 +182,15 @@ class DeepSeekAdapter(LLMAdapter):
 class BedrockAdapter(LLMAdapter):
     provider = LLMProvider.BEDROCK
 
+    # Map model prefixes to body formats
+    ANTHROPIC_PREFIXES = ("anthropic.", "claude")
+    DEEPSEEK_PREFIXES = ("deepseek.",)
+    META_PREFIXES = ("meta.", "llama")
+    GOOGLE_PREFIXES = ("google.", "gemma", "gemini")
+    QWEN_PREFIXES = ("qwen.",)
+    NOVA_PREFIXES = ("amazon.nova",)
+    MISTRAL_PREFIXES = ("mistral.",)
+
     def __init__(
         self,
         aws_access_key: str,
@@ -190,7 +199,6 @@ class BedrockAdapter(LLMAdapter):
         model: str = "us.anthropic.claude-sonnet-4-20250514-v1:0",
     ):
         import boto3
-
         self.client = boto3.client(
             "bedrock-runtime",
             region_name=region,
@@ -199,9 +207,17 @@ class BedrockAdapter(LLMAdapter):
         )
         self.model = model
 
+    def _is_provider(self, prefixes: tuple) -> bool:
+        return any(p in self.model.lower() for p in prefixes)
+
     def generate(
         self, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = 1024
     ) -> str:
+        if self._is_provider(self.ANTHROPIC_PREFIXES):
+            return self._generate_anthropic(system_prompt, user_prompt, temperature, max_tokens)
+        return self._generate_converse(system_prompt, user_prompt, temperature, max_tokens)
+
+    def _generate_anthropic(self, system_prompt: str, user_prompt: str, temperature: float, max_tokens: int) -> str:
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "system": system_prompt,
@@ -213,6 +229,18 @@ class BedrockAdapter(LLMAdapter):
         result = json.loads(response["body"].read())
         content = result.get("content", [{}])
         return content[0].get("text", "") if content else ""
+
+    def _generate_converse(self, system_prompt: str, user_prompt: str, temperature: float, max_tokens: int) -> str:
+        """Use Bedrock Converse API for non-Anthropic models (DeepSeek, Llama, etc.)"""
+        messages = [{"role": "user", "content": [{"text": user_prompt}]}]
+        sys_doc = [{"text": system_prompt}] if system_prompt else []
+        kwargs = {"modelId": self.model, "messages": messages}
+        if sys_doc:
+            kwargs["system"] = sys_doc
+        kwargs["inferenceConfig"] = {"temperature": temperature, "maxTokens": max_tokens}
+        response = self.client.converse(**kwargs)
+        output = response.get("output", {}).get("message", {}).get("content", [{}])
+        return output[0].get("text", "") if output else ""
 
 
 class OllamaAdapter(LLMAdapter):

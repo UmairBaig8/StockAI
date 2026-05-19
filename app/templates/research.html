@@ -63,7 +63,7 @@ function render(ticker,ind,news,opt){
   const pcr=opt.pcr||opt.market_pcr?.pcr;const sent=opt.sentiment||opt.market_pcr?.sentiment||'neutral';
   const reg=ind.regime||{};const mtf=ind.rsi_mtf||{};const macd=ind.macd||{};const bb=ind.bb||{};
   let newsHtml='';if(news.items?.length){newsHtml='<div class="section"><b>News:</b><br>'+news.items.slice(0,3).map(i=>'· '+i.title).join('<br>')+'</div>'}
-  let optionsHtml='';if(pcr!==undefined){optionsHtml='<div class="section"><b>Options PCR:</b> '+pcr+' <span class="tag '+sent+'">'+sent.toUpperCase()+'</span></div>'}
+  let optionsHtml='';if(pcr!=null){optionsHtml='<div class="section"><b>Options PCR:</b> '+pcr+' <span class="tag '+sent+'">'+sent.toUpperCase()+'</span></div>'}
   document.getElementById('results').innerHTML=`
     <div class="card"><h3>${ticker} @ ₹${ind.price||'--'}</h3>
       <div class="metric-row">

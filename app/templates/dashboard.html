@@ -87,7 +87,7 @@ setInterval(svc,3000);svc();
 async function pollEquity(){
   try{const r=await fetch('/api/v1/dash');const d=await r.json();
     const pnl=d.summary?.pnl||0;const pnlPct=d.summary?.pnl_percent||0;const inv=d.summary?.invested||0;
-    const total=100000+(pnl*100);
+    const total=inv+pnl;
     $('eq-pnl').textContent='₹'+total.toLocaleString('en-IN',{maximumFractionDigits:0});
     $('eq-pnl').style.color=pnl>=0?'var(--accent)':'var(--err)';
     $('eq-pnl-pct').textContent=(pnlPct>=0?'+':'')+pnlPct.toFixed(2)+'%';

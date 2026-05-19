@@ -1,6 +1,6 @@
 {% block content %}
 <style>
-  .provider-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px}
+  .provider-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:24px}
   .provider-card{display:flex;align-items:center;gap:10px;padding:12px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:12px;transition:all .15s var(--ease)}
   .provider-card:hover{border-color:rgba(0,255,136,0.18)}
   .provider-card .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
@@ -19,6 +19,13 @@
   .trace-stats span{display:flex;align-items:center;gap:4px}
 
   .table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border-soft);border-radius:12px}
+  .chart-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px}
+  .mini-chart{background:linear-gradient(180deg,rgba(23,24,36,0.85),rgba(18,18,26,0.85));border:1px solid var(--border-soft);border-radius:12px;padding:12px;min-height:110px}
+  .mini-chart h4{font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;font-weight:700}
+  .mini-chart .spark{width:100%;height:50px;overflow:hidden}
+  .mini-chart .spark svg{width:100%;height:100%}
+  .mini-chart .value{font-size:0.82rem;font-weight:800;color:var(--fg);margin-top:4px}
+  .mini-chart .value span{font-size:0.58rem;color:var(--muted);margin-left:4px}
   table{width:100%;border-collapse:collapse;font-size:0.7rem}
   th,td{padding:5px 8px;border-bottom:1px solid var(--border-soft)}
   th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);font-weight:700;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.05em}
@@ -33,6 +40,13 @@
 </header>
 
 <div class="provider-row" id="provider-list"><span class="muted" style="font-size:0.7rem;padding:8px">Loading providers...</span></div>
+
+<div class="chart-row">
+  <div class="mini-chart"><h4>Request Volume</h4><div class="spark" id="volume-spark"><svg><polyline fill="none" stroke="var(--border)" stroke-width="1"/></svg></div><div class="value" id="volume-val">--</div></div>
+  <div class="mini-chart"><h4>Avg Latency</h4><div class="spark" id="latency-spark"><svg><polyline fill="none" stroke="var(--border)" stroke-width="1"/></svg></div><div class="value" id="latency-val">--</div></div>
+  <div class="mini-chart"><h4>Token Usage</h4><div class="spark" id="token-spark"><svg><polyline fill="none" stroke="var(--border)" stroke-width="1"/></svg></div><div class="value" id="token-val">--</div></div>
+  <div class="mini-chart"><h4>Error Rate</h4><div class="spark" id="error-spark"><svg><polyline fill="none" stroke="var(--border)" stroke-width="1"/></svg></div><div class="value" id="error-val">--</div></div>
+</div>
 
 <div class="trace-header">
   <h2 style="margin:0;font-size:0.8rem">Call Traces</h2>
@@ -49,6 +63,9 @@
 </div>
 {% endblock %}
 <script>
+let _snapshots=[];
+const MAX_SNAPS=30;
+
 async function load(){
   try{const r=await fetch('/api/v1/llm/check');const d=await r.json();
     const provs=d.providers;const available=d.available||[];
@@ -62,6 +79,15 @@ async function load(){
     }).join('');
   }catch(e){}
   loadTraces();
+}
+function drawSpark(elId, vals, color){
+  const svg=document.getElementById(elId)?.querySelector('svg');
+  if(!svg||vals.length<2)return;
+  const w=svg.clientWidth||220,h=50;
+  const min=Math.min(...vals),max=Math.max(...vals),r=max-min||1;
+  svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  const pts=vals.map((v,i)=>`${(i/(vals.length-1))*w},${h-((v-min)/r)*h}`).join(' ');
+  svg.innerHTML=`<polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts}"/>`;
 }
 async function loadTraces(){
   const el=document.getElementById('trace-body');
@@ -85,6 +111,22 @@ async function loadTraces(){
         <td class="${t.success?'trace-ok':'trace-err'}">${t.success?'OK':t.error||'ERR'}</td>
       </tr>`
     ).join('');
+    // build snapshot
+    const calls=traces.length;
+    const avgLat=traces.length?Math.round(traces.reduce((x,t)=>x+(t.latency_ms||0),0)/traces.length):0;
+    const tokens=traces.reduce((x,t)=>x+(t.prompt_tokens_est||0)+(t.response_tokens_est||0),0);
+    const errs=traces.filter(t=>!t.success).length;
+    const errRate=calls?Math.round(errs/calls*100):0;
+    _snapshots.push({calls,avgLat,tokens,errRate});
+    if(_snapshots.length>MAX_SNAPS)_snapshots.shift();
+    document.getElementById('volume-val').innerHTML= `${calls}<span>calls</span>`;
+    document.getElementById('latency-val').innerHTML= `${avgLat}<span>ms avg</span>`;
+    document.getElementById('token-val').innerHTML= `${tokens}<span>tok</span>`;
+    document.getElementById('error-val').innerHTML= `${errRate}<span>% err</span>`;
+    drawSpark('volume-spark',_snapshots.map(s=>s.calls),'var(--accent)');
+    drawSpark('latency-spark',_snapshots.map(s=>s.avgLat),'var(--warn)');
+    drawSpark('token-spark',_snapshots.map(s=>s.tokens),'var(--focus)');
+    drawSpark('error-spark',_snapshots.map(s=>s.errRate),'var(--err)');
   }catch(e){el.innerHTML='<tr><td colspan="6" style="color:var(--err);text-align:center">Error loading traces</td></tr>'}
 }
 load();setInterval(loadTraces,15000);

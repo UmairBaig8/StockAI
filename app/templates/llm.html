@@ -1,90 +1,91 @@
 {% block content %}
 <style>
-  .grid-2{display:grid;gap:16px;grid-template-columns:1fr 1fr}
-  @media(max-width:900px){.grid-2{grid-template-columns:1fr}}
+  .provider-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px}
+  .provider-card{display:flex;align-items:center;gap:10px;padding:12px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:12px;transition:all .15s var(--ease)}
+  .provider-card:hover{border-color:rgba(0,255,136,0.18)}
+  .provider-card .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .provider-card .dot.on{background:var(--accent);box-shadow:0 0 6px rgba(0,255,136,0.4)}
+  .provider-card .dot.off{background:var(--err)}
+  .provider-card .info{flex:1;min-width:0}
+  .provider-card .pname{font-size:0.76rem;font-weight:700;color:var(--fg)}
+  .provider-card .pmodel{font-size:0.62rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .provider-card .pbadge{font-size:0.58rem;padding:2px 7px;border-radius:999px;font-weight:700;flex-shrink:0}
+  .pbadge.active{background:var(--accent-soft);color:var(--accent)}
+  .pbadge.ready{background:rgba(255,255,255,0.04);color:var(--muted);border:1px solid var(--border-soft)}
+  .pbadge.off{background:rgba(255,77,94,0.08);color:var(--err)}
 
-  .provider-card{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
-  .dot{width:8px;height:8px;border-radius:50%}
-  .dot.ok{background:var(--accent)}
-  .dot.fail{background:var(--err)}
-  .name{font-weight:600}
-  .muted{color:var(--muted);font-size:12px}
-  .pill{font-size:10px;padding:2px 6px;border-radius:6px;border:1px solid var(--border)}
-  .pill.ok{background:rgba(0,255,136,0.12);color:var(--accent);border-color:transparent}
+  .trace-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .trace-stats{display:flex;gap:14px;font-size:0.64rem;color:var(--muted);flex-wrap:wrap}
+  .trace-stats span{display:flex;align-items:center;gap:4px}
 
-  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
-  .stat{padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);text-align:center}
-  .stat .val{font-size:18px;font-weight:600}
-  .stat .lbl{font-size:11px;color:var(--muted)}
-
-  .table-wrap{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px}
-  table{width:100%;border-collapse:collapse;font-size:12px}
-  th,td{padding:6px 8px;border-bottom:1px solid var(--border)}
-  th{color:var(--muted);font-weight:500}
-  tr:hover{background:rgba(255,255,255,0.02)}
+  .table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border-soft);border-radius:12px}
+  table{width:100%;border-collapse:collapse;font-size:0.7rem}
+  th,td{padding:5px 8px;border-bottom:1px solid var(--border-soft)}
+  th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);font-weight:700;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.05em}
+  tr:hover td{background:rgba(255,255,255,0.015)}
+  .trace-err{color:var(--err)}
+  .trace-ok{color:var(--accent)}
 </style>
 
-<h1>LLM Providers <span class="muted">connection status</span></h1>
+<header>
+  <h1>LLM Observability <span class="muted">providers & traces</span></h1>
+  <button onclick="load()" style="font-size:0.68rem;min-height:30px;padding:5px 10px">Refresh</button>
+</header>
 
-<div class="summary" id="summary-row"></div>
+<div class="provider-row" id="provider-list"><span class="muted" style="font-size:0.7rem;padding:8px">Loading providers...</span></div>
 
-<div class="grid-2">
-  <div id="provider-list"></div>
-  <div>
-    <h2>Traces <span id="trace-summary" class="muted"></span></h2>
-    <div id="agent-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Time</th><th>Agent</th><th>Provider</th><th>Tok</th><th>Lat</th><th>Status</th></tr>
-        </thead>
-        <tbody id="trace-body"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
+<div class="trace-header">
+  <h2 style="margin:0;font-size:0.8rem">Call Traces</h2>
+  <div class="trace-stats" id="trace-summary"></div>
+</div>
+
+<div id="agent-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
+
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Time</th><th>Agent</th><th>Provider / Model</th><th>Tokens</th><th>Latency</th><th>Status</th></tr></thead>
+    <tbody id="trace-body"><tr><td colspan="6" style="color:var(--muted);text-align:center">Loading traces...</td></tr></tbody>
+  </table>
 </div>
 {% endblock %}
 <script>
 async function load(){
   try{const r=await fetch('/api/v1/llm/check');const d=await r.json();
     const provs=d.providers;const available=d.available||[];
-    document.getElementById('summary-row').innerHTML=`
-      <div class="stat"><span class="val c-green">${available.length}</span><span class="lbl">Connected</span></div>
-      <div class="stat"><span class="val c-muted">${Object.keys(provs).length-available.length}</span><span class="lbl">Not Configured</span></div>
-      <div class="stat"><span class="val">${d.active}</span><span class="lbl">Active</span></div>`;
     document.getElementById('provider-list').innerHTML=Object.entries(provs).map(([id,p])=>{
-      const ok=p.configured;const isDefault=p.default;
+      const ok=p.configured;const isDefault=d.active===id;
       return `<div class="provider-card">
-        <span class="dot ${ok?'ok':'fail'}" aria-label="${ok?'Connected':'Not configured'}"></span>
-        <div class="info"><div class="name">${p.label} ${isDefault?'<span class="pill ok">ACTIVE</span>':''}</div><div class="muted">${ok?'Model: '+p.model:'No API key configured - set MEMORY_'+id.toUpperCase()+'_API_KEY in .env'}</div></div>
-        ${ok?`<span class="pill ok">OK</span>`:`<span class="pill">OFF</span>`}
-      </div>`}).join('');
+        <span class="dot ${ok?'on':'off'}" aria-label="${ok?'Connected':'Not configured'}"></span>
+        <div class="info"><div class="pname">${p.label}</div><div class="pmodel">${ok?p.model:'No API key'}</div></div>
+        <span class="pbadge ${isDefault?'active':ok?'ready':'off'}">${isDefault?'ACTIVE':ok?'Ready':'OFF'}</span>
+      </div>`;
+    }).join('');
   }catch(e){}
   loadTraces();
 }
 async function loadTraces(){
+  const el=document.getElementById('trace-body');
   try{
     const r=await fetch('/api/v1/llm/traces?limit=50');
     const d=await r.json();
     const s=d.summary;
-    document.getElementById('trace-summary').innerHTML=`${s.total_calls} calls · ${s.success} OK · ${s.errors} errors · ~${s.prompt_tokens_est}+${s.response_tokens_est} tokens est`;
+    document.getElementById('trace-summary').innerHTML=`<span>${s.total_calls} calls</span><span style="color:var(--accent)">${s.success} OK</span><span style="color:var(--err)">${s.errors} err</span><span>~${s.prompt_tokens_est+ s.response_tokens_est} tok</span>`;
     const agents=d.by_agent||{};
     document.getElementById('agent-stats').innerHTML=Object.entries(agents).map(([a,st])=>
-      `<div class="stat" style="flex:0 0 auto;min-width:90px"><span class="val" style="font-size:0.9rem">${st.calls}</span><span class="lbl">${a} (${st.avg_latency_ms}ms)</span></div>`
+      `<div class="stat" style="flex:0 0 auto;min-width:80px"><span class="val" style="font-size:0.82rem">${st.calls}</span><span class="lbl">${a} <span style="font-size:0.55rem">${st.avg_latency_ms}ms</span></span></div>`
     ).join('');
     const traces=d.traces||[];
-    document.getElementById('trace-body').innerHTML=traces.reverse().map(t=>
+    el.innerHTML=traces.reverse().map(t=>
       `<tr>
         <td>${new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false})}</td>
         <td>${t.agent}</td>
-        <td>${t.provider}/${t.model}</td>
+        <td style="font-size:0.64rem;color:var(--muted)">${t.provider}/${t.model}</td>
         <td>${t.prompt_tokens_est}+${t.response_tokens_est}</td>
         <td>${t.latency_ms}ms</td>
-        <td style="color:${t.success?'var(--accent)':'var(--err)'}">${t.success?'OK':'ERR'}</td>
+        <td class="${t.success?'trace-ok':'trace-err'}">${t.success?'OK':t.error||'ERR'}</td>
       </tr>`
     ).join('');
-  }catch(e){document.getElementById('trace-body').innerHTML='<tr><td colspan="7" style="color:var(--err)">Error loading traces</td></tr>'}
+  }catch(e){el.innerHTML='<tr><td colspan="6" style="color:var(--err);text-align:center">Error loading traces</td></tr>'}
 }
-load();
-setInterval(loadTraces,15000);
+load();setInterval(loadTraces,15000);
 </script>

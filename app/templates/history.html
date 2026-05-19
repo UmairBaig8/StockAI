@@ -1,46 +1,78 @@
 {% block content %}
-<h1>Trade History <span class="muted">persisted in PostgreSQL</span></h1>
-      <div class="controls">
-        <input type="text" id="filter-ticker" placeholder="Filter ticker..." oninput="loadHistory()" aria-label="Filter by ticker">
-        <select id="filter-limit" onchange="loadHistory()"><option value="50">50</option><option value="100">100</option><option value="500">500</option></select>
-        <button class="export-btn" onclick="exportCSV()">Export CSV</button>
-        <span id="status" style="font-size:0.65rem;color:var(--muted)"></span>
-      </div>
-      <div id="summary-row" class="summary"></div>
-      <div style="overflow-x:auto">
-        <table><thead><tr><th>Time</th><th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L %</th><th>Status</th></tr></thead>
-        <tbody id="history-body"><tr><td colspan="8" style="color:var(--muted)">Loading...</td></tr></tbody></table>
-      </div>
+<style>
+  .history-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:16px}
+  .search-input{width:160px}
+</style>
+
+<header>
+  <h1>Trade History <span class="muted">persisted in PostgreSQL</span></h1>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="status" style="font-size:0.64rem;color:var(--muted)"></span>
+    <input type="text" id="filter-ticker" placeholder="Filter ticker..." oninput="render()" aria-label="Filter by ticker" class="search-input" style="text-transform:uppercase">
+    <select id="filter-limit" onchange="loadHistory()"><option value="100">100</option><option value="250">250</option><option value="500">500</option></select>
+    <button class="btn-secondary" onclick="exportCSV()" style="font-size:0.72rem;min-height:32px;padding:6px 10px">Export CSV</button>
+  </div>
+</header>
+
+<div class="history-stats" id="summary-row"></div>
+
+<div class="tbl-wrap">
+  <table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>P&L ₹</th><th>Status</th></tr></thead>
+  <tbody id="history-body"><tr><td colspan="9" style="color:var(--muted);text-align:center">Loading...</td></tr></tbody></table>
+</div>
+
+<div class="pagination" id="history-pager"></div>
 {% endblock %}
 <script>
-let historyData=[];
+const PAGE_SIZE=20;
+let allTrades=[];
+let currentPage=0;
+
 async function loadHistory(){
-  const ticker=document.getElementById('filter-ticker').value.toUpperCase();
+  document.getElementById('status').textContent='Loading...';
   const limit=document.getElementById('filter-limit').value;
-  try{const r=await fetch('/api/v1/history?ticker='+ticker+'&limit='+limit);const d=await r.json();
-    historyData=d.trades||[];
-    renderSummary(d.summary);renderTrades(historyData);
-    document.getElementById('status').textContent=historyData.length+' trades loaded';
-  }catch(e){document.getElementById('status').textContent='Error: '+e.message}
+  try{const r=await fetch('/api/v1/history?limit='+limit);const d=await r.json();
+    allTrades=d.trades||[];
+    renderSummary(d.summary);
+    render();
+    document.getElementById('status').textContent=allTrades.length+' trades';
+  }catch(e){document.getElementById('status').textContent='Error'}
 }
+
 function renderSummary(s){
   if(!s)return;
-  document.getElementById('summary-row').innerHTML=`
-    <div class="stat"><span class="val">${s.total_trades||0}</span><span class="lbl">Trades</span></div>
+  const el=document.getElementById('summary-row');
+  const pnl=s.pnl||0;
+  el.innerHTML=`
+    <div class="stat"><span class="val">${s.total_trades||0}</span><span class="lbl">Total Trades</span></div>
     <div class="stat"><span class="val green">${s.wins||0}</span><span class="lbl">Wins</span></div>
     <div class="stat"><span class="val red">${s.losses||0}</span><span class="lbl">Losses</span></div>
     <div class="stat"><span class="val">${(s.win_rate||0).toFixed(0)}%</span><span class="lbl">Win Rate</span></div>
-    <div class="stat"><span class="val ${(s.pnl||0)>=0?'green':'red'}">₹${Math.abs(s.pnl||0).toFixed(0)}</span><span class="lbl">P&L</span></div>`;
+    <div class="stat"><span class="val ${pnl>=0?'green':'red'}">${pnl>=0?'+':''}₹${Math.abs(pnl).toFixed(0)}</span><span class="lbl">Net P&L</span></div>
+    <div class="stat"><span class="val">₹${(s.volume||0).toFixed(0)}</span><span class="lbl">Volume</span></div>`;
 }
-function renderTrades(trades){
+
+function render(){
+  const q=(document.getElementById('filter-ticker').value||'').toUpperCase();
+  const filtered=q?allTrades.filter(t=>t.ticker.toUpperCase().includes(q)):allTrades;
+  const total=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));
+  if(currentPage>=total)currentPage=0;
+  const start=currentPage*PAGE_SIZE;
+  const slice=filtered.slice(start,start+PAGE_SIZE);
+
   const t=document.getElementById('history-body');
-  if(!trades.length){t.innerHTML='<tr><td colspan="8" style="color:var(--muted)">No trades found</td></tr>';return}
-  t.innerHTML=trades.map(tr=>`<tr><td>${(tr.time||'').slice(0,19)}</td><td>${tr.ticker}</td><td>${tr.dir}</td><td>${tr.qty}</td><td>₹${(tr.entry_price||0).toFixed(0)}</td><td>₹${(tr.exit_price||tr.entry_price||0).toFixed(0)}</td><td style="color:${(tr.pnl||0)>0?'var(--accent)':'var(--err)'}">${(tr.pnl>0?'+':'')+(tr.pnl||0).toFixed(2)}%</td><td>${tr.status}</td></tr>`).join('');
+  if(!slice.length){t.innerHTML='<tr><td colspan="9" style="color:var(--muted);text-align:center">No trades match</td></tr>';document.getElementById('history-pager').innerHTML='';return}
+  t.innerHTML=slice.map(tr=>`<tr><td>${(tr.time||'').slice(0,19)}</td><td>${tr.ticker}</td><td>${tr.dir}</td><td>${tr.qty}</td><td>₹${(tr.entry_price||0).toFixed(0)}</td><td>₹${(tr.exit_price||tr.entry_price||0).toFixed(0)}</td><td style="color:${(tr.pnl||0)>0?'var(--accent)':'var(--err)'}">${(tr.pnl>0?'+':'')+(tr.pnl||0).toFixed(2)}%</td><td style="color:${(tr.pnl||0)>0?'var(--accent)':'var(--err)'}">${(tr.pnl>0?'+':'')}₹${Math.abs(tr.pnl||0).toFixed(0)}</td><td>${tr.status||'filled'}</td></tr>`).join('');
+
+  const pager=document.getElementById('history-pager');
+  pager.innerHTML=`<button onclick="currentPage=Math.max(0,currentPage-1);render()" ${currentPage===0?'disabled':''}>Prev</button><span>${currentPage+1} / ${total}</span><button onclick="currentPage=Math.min(total-1,currentPage+1);render()" ${currentPage>=total-1?'disabled':''}>Next</button>`;
 }
+
 function exportCSV(){
-  if(!historyData.length)return alert('No data');
-  const csv='Time,Ticker,Direction,Qty,Entry,Exit,PnL%,Status\n'+historyData.map(t=>[t.time,t.ticker,t.dir,t.qty,t.entry_price,t.exit_price||t.entry_price,t.pnl,t.status].join(',')).join('\n');
+  if(!allTrades.length)return alert('No data');
+  const csv='Time,Ticker,Direction,Qty,Entry,Exit,PnL%,PnL,Status\n'+allTrades.map(t=>[t.time,t.ticker,t.dir,t.qty,t.entry_price,t.exit_price||t.entry_price,t.pnl||0,t.pnl*0||0,t.status].join(',')).join('\n');
   const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='stockai_trades_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
+
 loadHistory();
 </script>

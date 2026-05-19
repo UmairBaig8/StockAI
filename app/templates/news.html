@@ -1,13 +1,16 @@
 {% block content %}
 <style>
-  .news-item .tickers{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
-  .news-item .tickers span{display:inline-block;background:var(--accent-soft);color:var(--accent);font-size:0.64rem;padding:2px 8px;border-radius:999px;font-weight:700}
-  .news-item .tickers span.general{background:rgba(255,255,255,0.04);color:var(--muted);border:1px solid var(--border-soft)}
-  .news-item .title{font-size:0.92rem;color:var(--fg);margin-bottom:4px;letter-spacing:-0.02em}
-  .news-item .summary{font-size:0.76rem;color:var(--muted);margin-bottom:6px;line-height:1.5}
-  .news-item .meta{display:flex;gap:12px;align-items:center;font-size:0.66rem;color:var(--muted)}
-  .news-item .meta a{color:var(--accent)}
-  .age{color:var(--muted);font-size:0.62rem}
+  .news-feed{display:flex;flex-direction:column}
+  .news-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border-soft);transition:all .15s var(--ease);cursor:default}
+  .news-row:hover{background:rgba(255,255,255,0.02)}
+  .news-row .headline{font-size:0.82rem;font-weight:600;color:var(--fg);line-height:1.35;letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .news-row .meta-row{display:flex;align-items:center;gap:8px;font-size:0.62rem;color:var(--muted);margin-top:3px}
+  .news-row .ticker-tag{display:inline-block;background:var(--accent-soft);color:var(--accent);font-size:0.58rem;padding:1px 6px;border-radius:999px;font-weight:700;text-transform:uppercase}
+  .news-row .ticker-tag.general{background:rgba(255,255,255,0.03);color:var(--muted);border:1px solid var(--border-soft);font-weight:500}
+  .news-row .right{text-align:right;white-space:nowrap}
+  .news-row .age{font-size:0.62rem;color:var(--muted)}
+  .news-row .read-link{font-size:0.6rem;color:var(--accent);opacity:0;transition:opacity .15s var(--ease)}
+  .news-row:hover .read-link{opacity:1}
 </style>
 
 <header>
@@ -19,7 +22,7 @@
   </div>
 </header>
 
-<div id="news-list"><div class="loading">Loading news...</div></div>
+<div class="news-feed" id="news-list"><div class="loading">Loading news...</div></div>
 {% endblock %}
 <script>
 let newsItems=[];
@@ -27,7 +30,7 @@ function timeAgo(dateStr){
   if(!dateStr)return'';
   const diff=Date.now()-new Date(dateStr).getTime();
   const m=Math.floor(diff/60000),h=Math.floor(m/60),d=Math.floor(h/24),w=Math.floor(d/7),mo=Math.floor(d/30),y=Math.floor(d/365);
-  if(y>0)return y+'y ago';if(mo>0)return mo+'mo ago';if(w>0)return w+'w ago';if(d>0)return d+'d ago';if(h>0)return h+'h ago';if(m>0)return m+'m ago';return'just now';
+  if(y>0)return y+'y';if(mo>0)return mo+'mo';if(w>0)return w+'w';if(d>0)return d+'d';if(h>0)return h+'h';if(m>0)return m+'m';return'now';
 }
 async function fetchNews(){
   document.getElementById('status').textContent='Fetching...';
@@ -42,11 +45,11 @@ function render(){
   if(!filtered.length){document.getElementById('news-list').innerHTML='<div class="loading">No articles match</div>';return}
   document.getElementById('news-list').innerHTML=filtered.map(i=>{
     const hasTicker=i.tickers&&i.tickers.length;
-    const tkrs=hasTicker?i.tickers.slice(0,4).map(t=>`<span>$${t}</span>`).join(''):'<span class="general">general</span>';
-    const sum=i.summary?`<div class="summary">${i.summary.slice(0,200)}</div>`:'';
-    const link=i.link?`<a href="${i.link}" target="_blank" rel="noopener">Read</a>`:'';
+    const tkrs=hasTicker?i.tickers.slice(0,3).map(t=>`<span class="ticker-tag">${t}</span>`).join(' '):'<span class="ticker-tag general">general</span>';
     const ago=timeAgo(i.published);
-    return `<div class="news-item"><div class="tickers">${tkrs}</div><div class="title">${i.title}</div>${sum}<div class="meta"><span>${i.published||''}</span>${ago?`<span class="age">${ago}</span>`:''}${link}</div></div>`;
+    const link=i.link?`<a class="read-link" href="${i.link}" target="_blank" rel="noopener">Read</a>`:'';
+    const time=ago?`<span class="age">${ago}</span>`:'';
+    return `<div class="news-row"><div><div class="headline" title="${i.title}">${i.title}</div><div class="meta-row">${tkrs} ${link}</div></div><div class="right">${time}</div></div>`;
   }).join('');
 }
 fetchNews();setInterval(fetchNews,120000);

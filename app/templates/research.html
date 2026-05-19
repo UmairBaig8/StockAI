@@ -3,12 +3,14 @@
   .section b{color:var(--fg)}
 </style>
 
-<h1>Research <span class="muted">deep-dive per ticker</span></h1>
-<div class="search-bar">
-  <input type="text" id="ticker-input" placeholder="Enter ticker (e.g. RELIANCE)" aria-label="Ticker" style="text-transform:uppercase">
-  <button onclick="analyze()" aria-label="Analyze ticker">Analyze</button>
-  <button onclick="autoPick()" class="btn-secondary" aria-label="Pick a ticker from watchlist">Pick from watchlist</button>
-</div>
+<header>
+  <h1>Research <span class="muted">deep-dive per ticker</span></h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <input type="text" id="ticker-input" placeholder="Enter ticker (e.g. RELIANCE)" aria-label="Ticker" style="text-transform:uppercase;width:220px">
+    <button onclick="analyze()" aria-label="Analyze ticker">Analyze</button>
+    <button onclick="autoPick()" class="btn-secondary" aria-label="Pick a ticker from watchlist">Pick from watchlist</button>
+  </div>
+</header>
 <div id="results"><div class="loading">Enter a ticker to see technical indicators, news sentiment, and LLM analysis</div></div>
 {% endblock %}
 <script>

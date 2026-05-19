@@ -1,68 +1,16 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="/base.css">
-<title>StockAI — Research</title>
+{% block content %}
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{--bg:#0b0b10;--surface:#12121a;--border:#1e1e2e;--muted:#666;--fg:#c0c0c0;--accent:#00ff88;--err:#ff4444;--warn:#ffaa00;--radius:8px;--focus:#3b82f6}
-  body{font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;background:var(--bg);color:var(--fg);line-height:1.5;min-height:100vh}
-  a{color:var(--accent);text-decoration:none}a:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-  .skip-link{position:absolute;top:-100px;left:0;background:var(--accent);color:#000;padding:8px 16px;z-index:999}.skip-link:focus{top:0}
-  .layout{display:grid;grid-template-columns:180px 1fr;min-height:100vh}
-  .sidebar{background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh;overflow-y:auto}
-  .sidebar a,.sidebar span{display:flex;align-items:center;padding:7px 8px;border-radius:var(--radius);color:var(--muted);font-size:0.76rem;min-height:36px}
-  .sidebar a:hover,.sidebar a.active{background:var(--bg);color:var(--fg)}
-  .sidebar .brand{font-weight:700;color:var(--accent);font-size:0.95rem;margin-bottom:8px;padding:8px 10px}
-  .main{padding:20px 24px;max-width:900px}
-  .mobile-nav{display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 10px;gap:6px}
-  .mobile-nav a{color:var(--muted);font-size:0.75rem;padding:6px 10px;border-radius:var(--radius);min-height:36px;display:inline-flex;align-items:center}
-  .mobile-nav a.active{background:var(--bg);color:var(--fg)}
-  @media(max-width:768px){.layout{grid-template-columns:1fr}.sidebar{display:none}.mobile-nav{display:flex}.main{padding:10px}}
-  h1{font-size:1.2rem;margin-bottom:12px}h1 span{color:var(--muted);font-weight:400}
-  input,button{font-size:0.8rem}input{background:var(--surface);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:var(--radius)}input:focus{border-color:var(--focus)}
-  button{background:var(--accent);color:#000;border:none;padding:8px 16px;border-radius:var(--radius);cursor:pointer;min-height:36px}
-  .search-bar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
-  .card h3{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px}
-  .metric-row{display:flex;gap:12px;flex-wrap:wrap}
-  .metric{flex:1;min-width:100px;text-align:center;padding:8px;background:var(--bg);border-radius:var(--radius)}
-  .metric .val{font-size:1.1rem;font-weight:600;display:block}
-  .metric .lbl{font-size:0.55rem;color:var(--muted);text-transform:uppercase}
-  .val.green{color:var(--accent)}.val.red{color:var(--err)}
-  .tag{display:inline-block;padding:2px 6px;border-radius:3px;font-size:0.55rem}
-  .tag.bullish{background:#0a3a1a;color:var(--accent)}.tag.bearish{background:#3a0a0a;color:var(--err)}.tag.neutral{background:var(--bg);color:var(--muted)}
-  .section{font-size:0.7rem;line-height:1.7}
   .section b{color:var(--fg)}
-  .loading{color:var(--muted);font-size:0.8rem;text-align:center;padding:40px}
 </style>
-</head>
-<body>
-<a href="#main-content" class="skip-link">Skip to main content</a>
-<div class="layout">
-  <nav class="sidebar">
-    <span class="brand">StockAI</span>
-    <a href="/">Cockpit</a><a href="/research" class="active" aria-current="page">Research</a><a href="/news">News</a>
-    <a href="/backtest">Backtest</a><a href="/history">History</a>
-    <a href="/report">Report</a><a href="/settings">Settings</a>
-    <a href="/llm">LLM</a>
-  </nav>
-  <div>
-    <nav class="mobile-nav"><a href="/">Cockpit</a><a href="/research" class="active">Research</a><a href="/news">News</a><a href="/history">History</a>
-    <a href="/report">Report</a><a href="/settings">Settings</a>
-    <a href="/llm">LLM</a></nav>
-    <main class="main" id="main-content">
-      <h1>Research <span>deep-dive per ticker</span></h1>
-      <div class="search-bar">
-        <input type="text" id="ticker-input" placeholder="Enter ticker (e.g. RELIANCE)" aria-label="Ticker" style="text-transform:uppercase">
-        <button onclick="analyze()" aria-label="Analyze ticker">Analyze</button>
-        <button onclick="autoPick()" style="background:var(--surface);color:var(--fg);border:1px solid var(--border)" aria-label="Pick a ticker from watchlist">Pick from watchlist</button>
-      </div>
-      <div id="results"><div class="loading">Enter a ticker to see technical indicators, news sentiment, and LLM analysis</div></div>
-    </main>
-  </div>
+
+<h1>Research <span class="muted">deep-dive per ticker</span></h1>
+<div class="search-bar">
+  <input type="text" id="ticker-input" placeholder="Enter ticker (e.g. RELIANCE)" aria-label="Ticker" style="text-transform:uppercase">
+  <button onclick="analyze()" aria-label="Analyze ticker">Analyze</button>
+  <button onclick="autoPick()" class="btn-secondary" aria-label="Pick a ticker from watchlist">Pick from watchlist</button>
 </div>
+<div id="results"><div class="loading">Enter a ticker to see technical indicators, news sentiment, and LLM analysis</div></div>
+{% endblock %}
 <script>
 async function analyze(ticker){
   ticker=ticker||document.getElementById('ticker-input').value.toUpperCase().replace('.NS','');
@@ -102,5 +50,3 @@ function render(ticker,ind,news,opt){
     </div>`;
 }
 </script>
-</body>
-</html>

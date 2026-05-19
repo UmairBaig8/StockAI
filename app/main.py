@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import re
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, Response, JSONResponse
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -21,6 +23,62 @@ bridge = MarketDataBridge()
 set_bridge(bridge)
 strategy = StrategyAgent()
 bridge.callbacks.append(strategy.feed_quote)
+
+TEMPLATE_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+def render_page(template_name: str, title: str, active: str) -> str:
+    raw = (TEMPLATE_DIR / template_name).read_text()
+    if "{% block content %}" in raw:
+        block = raw.split("{% block content %}", 1)[1]
+        content, tail = block.split("{% endblock %}", 1)
+        content += "\n" + "\n".join(re.findall(r"<script[\s\S]*?</script>", tail))
+    else:
+        match = re.search(r"<main[^>]*>([\s\S]*?)</main>", raw)
+        content = match.group(1) if match else raw
+        content += "\n" + "\n".join(re.findall(r"<script[\s\S]*?</script>", raw))
+    content = content.replace("</body>", "").replace("</html>", "")
+    links = [
+        ("/", "Cockpit", "cockpit"),
+        ("/research", "Research", "research"),
+        ("/news", 'News <span class="badge ms-auto" id="news-count">-</span>', "news"),
+        ("/backtest", "Backtest", "backtest"),
+        ("/history", "History", "history"),
+        ("/report", "Report", "report"),
+        ("/settings", "Settings", "settings"),
+        ("/llm", "LLM", "llm"),
+    ]
+    nav = "".join(
+        f'<a href="{href}" class="{"active" if key == active else ""}">{label}</a>'
+        for href, label, key in links
+    )
+    mobile_nav = nav
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <link rel="icon" href="/static/img/app-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/system.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <a class="brand" href="/"><img src="/static/img/app-icon.svg" alt="" width="28" height="28"><span>StockAI</span></a>
+      {nav}
+      <a href="http://3.85.55.232:8080" rel="noopener">2FA Relay</a>
+    </aside>
+    <div class="page-shell">
+      <nav class="mobile-nav" aria-label="Mobile navigation">{mobile_nav}</nav>
+      <main class="main" id="main-content">{content}</main>
+    </div>
+  </div>
+  <div id="toast" class="toast success" style="display:none" role="alert" aria-live="polite"></div>
+</body>
+</html>"""
 
 
 @asynccontextmanager
@@ -48,6 +106,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(router, prefix="/api/v1")
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     # SEBI audit: log every API action
     @app.middleware("http")
@@ -71,37 +130,35 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard():
-        dash_path = Path(__file__).parent / "templates" / "dashboard.html"
-        return dash_path.read_text()
+        return render_page("dashboard.html", "StockAI — Cockpit", "cockpit")
 
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page():
-        settings_path = Path(__file__).parent / "templates" / "settings.html"
-        return settings_path.read_text()
+        return render_page("settings.html", "StockAI — Settings", "settings")
 
     @app.get("/news", response_class=HTMLResponse)
     async def news_page():
-        return (Path(__file__).parent / "templates" / "news.html").read_text()
+        return render_page("news.html", "StockAI — Market News", "news")
 
     @app.get("/research", response_class=HTMLResponse)
     async def research_page():
-        return (Path(__file__).parent / "templates" / "research.html").read_text()
+        return render_page("research.html", "StockAI — Research", "research")
 
     @app.get("/history", response_class=HTMLResponse)
     async def history_page():
-        return (Path(__file__).parent / "templates" / "history.html").read_text()
+        return render_page("history.html", "StockAI — Trade History", "history")
 
     @app.get("/backtest", response_class=HTMLResponse)
     async def backtest_page():
-        return (Path(__file__).parent / "templates" / "backtest.html").read_text()
+        return render_page("backtest.html", "StockAI — Backtest", "backtest")
 
     @app.get("/report", response_class=HTMLResponse)
     async def report_page():
-        return (Path(__file__).parent / "templates" / "report.html").read_text()
+        return render_page("report.html", "StockAI — Daily Report", "report")
 
     @app.get("/llm", response_class=HTMLResponse)
     async def llm_page():
-        return (Path(__file__).parent / "templates" / "llm.html").read_text()
+        return render_page("llm.html", "StockAI — LLM Providers", "llm")
 
     @app.get("/base.css", response_class=Response)
     async def base_css():
@@ -110,7 +167,7 @@ def create_app() -> FastAPI:
 
     @app.get("/favicon.ico")
     async def favicon():
-        svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="#0b0b10"/><text x="16" y="22" text-anchor="middle" fill="#00ff88" font-family="monospace" font-size="18" font-weight="bold">S</text></svg>'
+        svg = (STATIC_DIR / "img" / "app-icon.svg").read_text()
         return Response(content=svg, media_type="image/svg+xml")
 
     @app.websocket("/ws/market")

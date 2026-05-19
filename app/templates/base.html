@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}StockAI{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/system.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="brand">StockAI</div>
+      <a href="/" class="{% block nav_cockpit %}{% endblock %}">Cockpit</a>
+      <a href="/research" class="{% block nav_research %}{% endblock %}">Research</a>
+      <a href="/news" class="{% block nav_news %}{% endblock %}">News</a>
+      <a href="/backtest" class="{% block nav_backtest %}{% endblock %}">Backtest</a>
+      <a href="/history" class="{% block nav_history %}{% endblock %}">History</a>
+      <a href="/report" class="{% block nav_report %}{% endblock %}">Report</a>
+      <a href="/settings" class="{% block nav_settings %}{% endblock %}">Settings</a>
+      <a href="/llm" class="{% block nav_llm %}{% endblock %}">LLM</a>
+    </nav>
+
+    <main class="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

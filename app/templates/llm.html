@@ -1,46 +1,49 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockAI — LLM Providers</title>
-<link rel="stylesheet" href="/base.css">
+{% block content %}
 <style>
-  .main{max-width:700px}
-  .provider-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
-  .provider-card .status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-  .status-dot.ok{background:var(--accent)}.status-dot.fail{background:var(--err)}
-  .provider-card .info{flex:1}
-  .provider-card .name{font-weight:600;font-size:0.9rem}
-  .provider-card .detail{font-size:0.65rem;color:var(--muted);margin-top:2px}
-  .active-badge{background:var(--accent);color:#000;font-size:0.55rem;padding:2px 6px;border-radius:3px}
-  .inactive-badge{background:var(--bg);color:var(--muted);font-size:0.55rem;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
-  .summary{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-  .summary .stat{flex:1;min-width:100px;text-align:center;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
-  .summary .stat .val{font-size:1.3rem;font-weight:600}.summary .stat .lbl{font-size:0.6rem;color:var(--muted)}
+  .grid-2{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  @media(max-width:900px){.grid-2{grid-template-columns:1fr}}
+
+  .provider-card{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .dot.ok{background:var(--accent)}
+  .dot.fail{background:var(--err)}
+  .name{font-weight:600}
+  .muted{color:var(--muted);font-size:12px}
+  .pill{font-size:10px;padding:2px 6px;border-radius:6px;border:1px solid var(--border)}
+  .pill.ok{background:rgba(0,255,136,0.12);color:var(--accent);border-color:transparent}
+
+  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+  .stat{padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);text-align:center}
+  .stat .val{font-size:18px;font-weight:600}
+  .stat .lbl{font-size:11px;color:var(--muted)}
+
+  .table-wrap{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:6px 8px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:500}
+  tr:hover{background:rgba(255,255,255,0.02)}
 </style>
-</head>
-<body>
-<a href="#main-content" class="skip-link">Skip to main content</a>
-<div class="layout">
-  <nav class="sidebar">
-    <span class="brand">StockAI</span>
-    <a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a>
-    <a href="/backtest">Backtest</a><a href="/history">History</a>
-    <a href="/report">Report</a><a href="/settings">Settings</a>
-    <a href="/llm" class="active" aria-current="page">LLM</a>
-  </nav>
+
+<h1>LLM Providers <span class="muted">connection status</span></h1>
+
+<div class="summary" id="summary-row"></div>
+
+<div class="grid-2">
+  <div id="provider-list"></div>
   <div>
-    <nav class="mobile-nav"><a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a><a href="/llm" class="active">LLM</a></nav>
-    <main class="main" id="main-content">
-      <h1>LLM Providers <span>connection status</span></h1>
-      <div class="summary" id="summary-row"></div>
-      <div id="provider-list">Loading...</div>
-      <h2 style="margin-top:24px">LLM Call Traces <span id="trace-summary"></span></h2>
-      <div id="agent-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
-      <div style="overflow-x:auto"><table style="width:100%;font-size:0.65rem"><thead><tr><th>Time</th><th>Agent</th><th>Provider</th><th>Prompt</th><th>Resp</th><th>Latency</th><th>Status</th></tr></thead><tbody id="trace-body"><tr><td colspan="7" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
-    </main>
+    <h2>Traces <span id="trace-summary" class="muted"></span></h2>
+    <div id="agent-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Agent</th><th>Provider</th><th>Tok</th><th>Lat</th><th>Status</th></tr>
+        </thead>
+        <tbody id="trace-body"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
+{% endblock %}
 <script>
 async function load(){
   try{const r=await fetch('/api/v1/llm/check');const d=await r.json();
@@ -52,9 +55,9 @@ async function load(){
     document.getElementById('provider-list').innerHTML=Object.entries(provs).map(([id,p])=>{
       const ok=p.configured;const isDefault=p.default;
       return `<div class="provider-card">
-        <span class="status-dot ${ok?'ok':'fail'}" aria-label="${ok?'Connected':'Not configured'}"></span>
-        <div class="info"><div class="name">${p.label} ${isDefault?'<span class="active-badge">ACTIVE</span>':''}</div><div class="detail">${ok?'Model: '+p.model:'No API key configured — set MEMORY_'+id.toUpperCase()+'_API_KEY in .env'}</div></div>
-        ${ok?`<span class="active-badge">OK</span>`:`<span class="inactive-badge">OFF</span>`}
+        <span class="dot ${ok?'ok':'fail'}" aria-label="${ok?'Connected':'Not configured'}"></span>
+        <div class="info"><div class="name">${p.label} ${isDefault?'<span class="pill ok">ACTIVE</span>':''}</div><div class="muted">${ok?'Model: '+p.model:'No API key configured - set MEMORY_'+id.toUpperCase()+'_API_KEY in .env'}</div></div>
+        ${ok?`<span class="pill ok">OK</span>`:`<span class="pill">OFF</span>`}
       </div>`}).join('');
   }catch(e){}
   loadTraces();
@@ -75,10 +78,9 @@ async function loadTraces(){
         <td>${new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false})}</td>
         <td>${t.agent}</td>
         <td>${t.provider}/${t.model}</td>
-        <td>~${t.prompt_tokens_est}</td>
-        <td>~${t.response_tokens_est}</td>
+        <td>${t.prompt_tokens_est}+${t.response_tokens_est}</td>
         <td>${t.latency_ms}ms</td>
-        <td style="color:${t.success?'var(--accent)':'var(--err)'}">${t.success?'OK':t.error||'FAIL'}</td>
+        <td style="color:${t.success?'var(--accent)':'var(--err)'}">${t.success?'OK':'ERR'}</td>
       </tr>`
     ).join('');
   }catch(e){document.getElementById('trace-body').innerHTML='<tr><td colspan="7" style="color:var(--err)">Error loading traces</td></tr>'}
@@ -86,5 +88,3 @@ async function loadTraces(){
 load();
 setInterval(loadTraces,15000);
 </script>
-</body>
-</html>

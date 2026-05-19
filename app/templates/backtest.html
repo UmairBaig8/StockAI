@@ -1,67 +1,13 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="/base.css">
-<title>StockAI — Backtest</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{--bg:#0b0b10;--surface:#12121a;--border:#1e1e2e;--muted:#666;--fg:#c0c0c0;--accent:#00ff88;--err:#ff4444;--radius:8px;--focus:#3b82f6}
-  body{font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;background:var(--bg);color:var(--fg);line-height:1.5;min-height:100vh}
-  a{color:var(--accent);text-decoration:none}a:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-  .skip-link{position:absolute;top:-100px;left:0;background:var(--accent);color:#000;padding:8px 16px;z-index:999}.skip-link:focus{top:0}
-  .layout{display:grid;grid-template-columns:180px 1fr;min-height:100vh}
-  .sidebar{background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh;overflow-y:auto}
-  .sidebar a,.sidebar span{display:flex;align-items:center;padding:7px 8px;border-radius:var(--radius);color:var(--muted);font-size:0.76rem;min-height:36px}
-  .sidebar a:hover,.sidebar a.active{background:var(--bg);color:var(--fg)}
-  .sidebar .brand{font-weight:700;color:var(--accent);font-size:0.95rem;margin-bottom:8px;padding:8px 10px}
-  .main{padding:20px 24px;max-width:900px}
-  .mobile-nav{display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 10px;gap:6px}
-  .mobile-nav a{color:var(--muted);font-size:0.75rem;padding:6px 10px;border-radius:var(--radius);min-height:36px;display:inline-flex;align-items:center}
-  .mobile-nav a.active{background:var(--bg);color:var(--fg)}
-  @media(max-width:768px){.layout{grid-template-columns:1fr}.sidebar{display:none}.mobile-nav{display:flex}.main{padding:10px}}
-  h1{font-size:1.2rem;margin-bottom:8px}
-  .form-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:end}
-  label{font-size:0.65rem;color:var(--muted);display:block;margin-bottom:2px}
-  input,select{background:var(--surface);border:1px solid var(--border);color:var(--fg);padding:8px 10px;border-radius:var(--radius);font-size:0.8rem}
-  button{background:var(--accent);color:#000;border:none;padding:8px 20px;border-radius:var(--radius);font-size:0.8rem;cursor:pointer;min-height:36px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
-  .card h3{font-size:0.7rem;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
-  .metric-row{display:flex;gap:10px;flex-wrap:wrap}
-  .metric{flex:1;min-width:90px;text-align:center;padding:8px;background:var(--bg);border-radius:var(--radius)}
-  .metric .val{font-size:1rem;font-weight:600}.metric .lbl{font-size:0.55rem;color:var(--muted)}
-  .val.green{color:var(--accent)}.val.red{color:var(--err)}
-  table{width:100%;font-size:0.65rem;border-collapse:collapse}
-  th{text-align:left;color:var(--muted);padding:3px 6px;border-bottom:1px solid var(--border)}td{padding:2px 6px;border-bottom:1px solid #15151f}
-  .loading{color:var(--muted);text-align:center;padding:40px}
-</style>
-</head>
-<body>
-<a href="#main-content" class="skip-link">Skip to main content</a>
-<div class="layout">
-  <nav class="sidebar">
-    <span class="brand">StockAI</span>
-    <a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a>
-    <a href="/backtest" class="active" aria-current="page">Backtest</a><a href="/history">History</a>
-    <a href="/report">Report</a><a href="/settings">Settings</a>
-    <a href="/llm">LLM</a>
-  </nav>
-  <div>
-    <nav class="mobile-nav"><a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a><a href="/backtest" class="active">Backtest</a><a href="/history">History</a>
-    <a href="/report">Report</a><a href="/settings">Settings</a>
-    <a href="/llm">LLM</a></nav>
-    <main class="main" id="main-content">
-      <h1>Backtest <span style="color:var(--muted);font-weight:400">simulate strategy on historical data</span></h1>
-      <div class="form-row">
-        <div><label for="tickers">Tickers (comma-separated)</label><input type="text" id="tickers" value="RELIANCE.NS,TCS.NS,INFY.NS" style="width:250px"></div>
-        <div><label for="period">Period</label><select id="period"><option value="3mo">3 months</option><option value="6mo" selected>6 months</option><option value="1y">1 year</option><option value="2y">2 years</option></select></div>
-        <div><label for="interval">Interval</label><select id="interval"><option value="1h" selected>1 hour</option><option value="1d">1 day</option><option value="15m">15 min</option></select></div>
-        <div><button onclick="runBacktest()">Run Backtest</button></div>
-      </div>
-      <div id="results"><div class="loading">Configure parameters and run backtest to see results</div></div>
-    </main>
-  </div>
+{% block content %}
+<h1>Backtest <span class="muted">simulate strategy on historical data</span></h1>
+<div class="form-row">
+  <div><label for="tickers">Tickers (comma-separated)</label><input type="text" id="tickers" value="RELIANCE.NS,TCS.NS,INFY.NS" style="width:250px"></div>
+  <div><label for="period">Period</label><select id="period"><option value="3mo">3 months</option><option value="6mo" selected>6 months</option><option value="1y">1 year</option><option value="2y">2 years</option></select></div>
+  <div><label for="interval">Interval</label><select id="interval"><option value="1h" selected>1 hour</option><option value="1d">1 day</option><option value="15m">15 min</option></select></div>
+  <div><button onclick="runBacktest()">Run Backtest</button></div>
 </div>
+<div id="results"><div class="loading">Configure parameters and run backtest to see results</div></div>
+{% endblock %}
 <script>
 async function runBacktest(){
   document.getElementById('results').innerHTML='<div class="loading">Running backtest... (may take 30-60s)</div>';
@@ -83,11 +29,9 @@ async function runBacktest(){
           <div class="metric"><span class="val">${s.profit_factor}</span><span class="lbl">Profit Factor</span></div>
         </div></div>
       <div class="card"><h3>Recent Trades</h3>
-        <div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>P&L ₹</th></tr></thead>
+        <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>P&L ₹</th></tr></thead>
         <tbody>${(d.recent_trades||[]).map(t=>`<tr><td>${(t.entry_time||'').slice(0,16)}</td><td>${t.ticker}</td><td>${t.dir}</td><td>${t.qty}</td><td>${t.entry}</td><td>${t.exit}</td><td style="color:${t.pnl_pct>0?'var(--accent)':'var(--err)'}">${(t.pnl_pct>0?'+':'')+t.pnl_pct}%</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">₹${t.pnl}</td></tr>`).join('')}</tbody></table></div>
       </div>`;
   }catch(e){document.getElementById('results').innerHTML='<div class="loading">Error: '+e.message+'</div>'}
 }
 </script>
-</body>
-</html>

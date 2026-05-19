@@ -1,9 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockAI — Daily Report</title>
-<link rel="stylesheet" href="/base.css">
+{% block content %}
 <style>
   .main{max-width:960px}
   .report-header{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
@@ -42,20 +37,6 @@
   .metric-badge .mv{font-size:0.9rem;font-weight:600}
   .metric-badge .ml{font-size:0.5rem;color:var(--muted)}
 </style>
-</head>
-<body>
-<a href="#main-content" class="skip-link">Skip to main content</a>
-<div class="layout">
-  <nav class="sidebar">
-    <span class="brand">StockAI</span>
-    <a href="/">Cockpit</a><a href="/research">Research</a><a href="/news">News</a>
-    <a href="/backtest">Backtest</a><a href="/history">History</a>
-    <a href="/report" class="active" aria-current="page">Report</a>
-    <a href="/settings">Settings</a><a href="/llm">LLM</a>
-  </nav>
-  <div>
-    <nav class="mobile-nav"><a href="/">Cockpit</a><a href="/history">History</a><a href="/report" class="active">Report</a><a href="/llm">LLM</a></nav>
-    <main class="main" id="main-content">
       <h1>Daily Performance Report</h1>
       <div class="report-header" id="today-cards">Loading...</div>
 
@@ -114,9 +95,7 @@
           <tbody id="weekly-body"><tr><td colspan="7" style="color:var(--muted)">Loading...</td></tr></tbody></table>
         </div>
       </div>
-    </main>
-  </div>
-</div>
+{% endblock %}
 <script>
 let reportData=null;
 
@@ -254,5 +233,3 @@ function switchTab(tab){
 
 load();setInterval(load,60000);
 </script>
-</body>
-</html>

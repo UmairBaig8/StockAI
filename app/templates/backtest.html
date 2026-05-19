@@ -1,65 +1,82 @@
 {% block content %}
 <style>
-  .backtest-intro{text-align:center;padding:32px 16px;color:var(--muted)}
+  .backtest-intro{text-align:center;padding:28px 16px;color:var(--muted)}
   .backtest-intro h3{font-size:0.9rem;color:var(--fg);margin-bottom:8px;text-transform:none}
   .backtest-intro p{font-size:0.74rem;max-width:520px;margin:0 auto 6px;line-height:1.6}
-  .equity-chart-wrap{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:14px;padding:16px;margin:14px 0}
-  .equity-chart-wrap svg{width:100%;height:180px}
-  .chart-legend{display:flex;gap:16px;font-size:0.65rem;color:var(--muted);margin-bottom:8px}
-  .chart-legend span{display:flex;align-items:center;gap:5px}
-  .chart-legend .swatch{width:10px;height:10px;border-radius:2px}
-  .result-meta{display:flex;gap:6px;font-size:0.68rem;color:var(--muted);margin-top:6px;flex-wrap:wrap}
-  .ticker-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
-  .ticker-chip{padding:4px 10px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:8px;font-size:0.68rem;font-weight:700;color:var(--fg);cursor:pointer;transition:all .15s var(--ease)}
-  .ticker-chip:hover{border-color:var(--accent)}
+
+  .ticker-select{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .ticker-chip{padding:6px 12px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:10px;font-size:0.72rem;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s var(--ease);user-select:none}
+  .ticker-chip:hover{border-color:var(--accent);color:var(--fg)}
+  .ticker-chip.selected{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+
+  .equity-chart-wrap{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:14px;padding:18px;margin:14px 0}
+  .equity-chart-wrap .chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .equity-chart-wrap .chart-title{font-size:0.78rem;font-weight:700;color:var(--fg);letter-spacing:-0.01em}
+  .equity-chart-wrap .chart-stats{display:flex;gap:16px;font-size:0.64rem;color:var(--muted)}
+  .equity-chart-wrap svg{width:100%;height:200px}
 </style>
 
 <header>
   <h1>Backtest <span class="muted">simulate strategy on historical data</span></h1>
-  <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-    <span style="font-size:0.62rem;color:var(--muted)">using watchlist</span>
-    <input type="text" id="tickers" placeholder="e.g. RELIANCE.NS, TCS.NS" style="width:210px">
+  <div style="display:flex;gap:8px;align-items:flex-end">
     <select id="period"><option value="3mo">3 mo</option><option value="6mo" selected>6 mo</option><option value="1y">1 year</option><option value="2y">2 years</option></select>
     <select id="interval"><option value="1h" selected>1 hour</option><option value="1d">1 day</option><option value="15m">15 min</option></select>
     <button onclick="runBacktest()">Run</button>
   </div>
 </header>
 
+<div class="ticker-select" id="ticker-chips"><span class="muted" style="font-size:0.72rem">Loading watchlist...</span></div>
+
 <div id="results">
   <div class="backtest-intro">
     <h3>What is Backtesting?</h3>
-    <p>Backtesting replays your trading strategy against <b>historical price data</b> to see how it would have performed — without risking real money.</p>
-    <p>It buys when RSI drops below oversold thresholds, sells on take-profit or stop-loss, and tracks every trade. Metrics like <b>Sharpe ratio</b> (risk-adjusted return) and <b>max drawdown</b> (worst peak-to-trough loss) help you evaluate the strategy objectively.</p>
-    <p style="color:var(--accent);font-size:0.68rem;margin-top:8px">Your watchlist is pre-loaded — pick period & interval, then Run.</p>
+    <p>Simulate your strategy on <b>historical data</b> — no real money at risk. Select tickers above, pick period & interval, then Run.</p>
   </div>
 </div>
 {% endblock %}
 <script>
+let allTickers=[],selected=new Set();
+
 async function loadWatchlist(){
   try{const r=await fetch('/api/v1/settings');const cfg=await r.json();
-    const t=(cfg.tickers||'RELIANCE.NS,TCS.NS,INFY.NS').split(',').map(t=>t.trim()).filter(Boolean).join(', ');
-    document.getElementById('tickers').value=t;
-  }catch(e){document.getElementById('tickers').value='RELIANCE.NS,TCS.NS,INFY.NS'}
+    allTickers=(cfg.tickers||'RELIANCE.NS,TCS.NS,INFY.NS').split(',').map(t=>t.trim()).filter(Boolean);
+    allTickers.forEach(t=>selected.add(t));
+    renderChips();
+  }catch(e){allTickers=['RELIANCE.NS','TCS.NS','INFY.NS'];allTickers.forEach(t=>selected.add(t));renderChips()}
 }
-loadWatchlist();
+function renderChips(){
+  document.getElementById('ticker-chips').innerHTML=allTickers.map(t=>{
+    const s=selected.has(t);
+    return `<span class="ticker-chip${s?' selected':''}" onclick="toggleTicker('${t}')">${t.replace('.NS','')}</span>`;
+  }).join('');
+}
+function toggleTicker(t){
+  selected.has(t)?selected.delete(t):selected.add(t);
+  renderChips();
+}
+function getSelected(){return [...selected].join(', ')}
 
 async function runBacktest(){
-  document.getElementById('results').innerHTML='<div class="loading">Running backtest... (may take 30-60s)</div>';
-  const body={tickers:document.getElementById('tickers').value,period:document.getElementById('period').value,interval:document.getElementById('interval').value};
+  const tickers=getSelected();
+  if(!tickers){alert('Select at least one ticker');return}
+  document.getElementById('results').innerHTML='<div class="loading">Running backtest on '+tickers.split(',').length+' tickers... (may take 30-60s)</div>';
+  const body={tickers,period:document.getElementById('period').value,interval:document.getElementById('interval').value};
   try{const r=await fetch('/api/v1/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();
     if(d.error){document.getElementById('results').innerHTML='<div class="loading">'+d.error+'</div>';return}
-    const s=d.summary;const params=d.params;const curves=d.equity_curves||{};
-    const chartTickers=Object.keys(curves);
-    const chartsHtml=chartTickers.map(tk=>renderEquityChart(tk,curves[tk])).join('');
-    const tickerList=params.tickers.join(', ');
-    const tickerTags=params.tickers.map(t=>`<span class="ticker-chip">${t.replace('.NS','')}</span>`).join('');
+    const s=d.summary;const ret=s.total_return_pct||0;
+    const color=ret>=0?'var(--accent)':'var(--err)';
+    const curves=d.equity_curves||{};
+    const chartsHtml=Object.entries(curves).map(([tk,v])=>renderChart(tk,v)).join('');
     document.getElementById('results').innerHTML=`
-      <div class="card"><h3>${tickerList} · ${params.period} · ${params.interval}</h3>
-        <div class="ticker-chips">${tickerTags}</div>
+      <div class="card">
+        <div class="chart-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span class="chart-title">${Object.keys(curves).length} ticker${Object.keys(curves).length>1?'s':''} · ${body.period} · ${body.interval}</span>
+          <span style="font-size:0.72rem;font-weight:800;color:${color}">${ret>=0?'+':''}${ret.toFixed(1)}%</span>
+        </div>
         <div class="metric-row">
           <div class="metric"><span class="val">${s.total_trades}</span><span class="lbl">Trades</span></div>
           <div class="metric"><span class="val">${s.win_rate}%</span><span class="lbl">Win Rate</span></div>
-          <div class="metric"><span class="val ${s.total_return_pct>=0?'green':'red'}">${s.total_return_pct>=0?'+':''}${s.total_return_pct}%</span><span class="lbl">Return</span></div>
+          <div class="metric"><span class="val ${ret>=0?'green':'red'}">${ret>=0?'+':''}${ret}%</span><span class="lbl">Return</span></div>
           <div class="metric"><span class="val">${(s.cagr||0).toFixed(1)}%</span><span class="lbl">CAGR</span></div>
           <div class="metric"><span class="val ${s.sharpe_ratio>=0?'green':'red'}">${s.sharpe_ratio}</span><span class="lbl">Sharpe</span></div>
           <div class="metric"><span class="val red">${s.max_drawdown_pct}%</span><span class="lbl">Max DD</span></div>
@@ -76,23 +93,53 @@ async function runBacktest(){
   }catch(e){document.getElementById('results').innerHTML='<div class="loading">Error: '+e.message+'</div>'}
 }
 
-function renderEquityChart(ticker,vals){
+function renderChart(ticker,vals){
   const len=vals.length;if(len<2)return'';
-  const w=900,h=180,pad=20;
+  const w=960,h=200,ml=52,mr=16,mt=18,mb=28;
+  const pw=w-ml-mr,ph=h-mt-mb;
   const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
-  const pts=vals.map((v,i)=>`${pad+(i/(len-1))*(w-pad*2)},${h-pad-((v-min)/range)*(h-pad*2)}`).join(' ');
   const startVal=vals[0],endVal=vals[len-1];
   const pct=((endVal-startVal)/startVal*100).toFixed(1);
-  const color=pct>=0?'var(--accent)':'var(--err)';
+  const color=pct>=0?'#00ff88':'#ff4d5e';
+
+  // Line points
+  const pts=vals.map((v,i)=>`${ml+(i/(len-1))*pw},${mt+ph-((v-min)/range)*ph}`).join(' ');
+
+  // Area fill
+  const areaPts=pts+` ${ml+(len-1)/(len-1)*pw},${mt+ph} ${ml},${mt+ph}`;
+
+  // Grid lines (4 horizontal)
+  let grid='';
+  for(let i=0;i<=4;i++){
+    const y=mt+(i/4)*ph;
+    const val=min+(range*(1-i/4));
+    grid+=`<line x1="${ml}" x2="${ml+pw}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+    <text x="${ml-6}" y="${y+4}" fill="var(--muted)" font-size="9" text-anchor="end">₹${(val/1000).toFixed(1)}k</text>`;
+  }
+
+  // Start/end markers
+  const startX=ml,startY=mt+ph-((startVal-min)/range)*ph;
+  const endX=ml+pw,endY=mt+ph-((endVal-min)/range)*ph;
+
+  // End dot
+  const dot=`<circle cx="${endX}" cy="${endY}" r="4" fill="${color}" stroke="var(--bg)" stroke-width="2"/>`;
+
+  // End label
+  const label=`<text x="${endX+8}" y="${endY+4}" fill="${color}" font-size="11" font-weight="700">${pct>=0?'+':''}${pct}%</text>`;
+
   return `<div class="equity-chart-wrap">
-    <div class="chart-legend">
-      <span><span class="swatch" style="background:${color}"></span>${ticker.replace('.NS','')} &middot; ${pct>=0?'+':''}${pct}%</span>
-      <span style="margin-left:auto">Start: ₹${startVal.toFixed(0)} &middot; End: ₹${endVal.toFixed(0)}</span>
+    <div class="chart-header">
+      <span class="chart-title">${ticker.replace('.NS','')}</span>
+      <span class="chart-stats"><span>Start ₹${startVal.toFixed(0)}</span><span>End ₹${endVal.toFixed(0)}</span><span style="color:${color}">${pct>=0?'+':''}${pct}%</span></span>
     </div>
     <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
-      <polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${pts}"/>
-      <polygon points="${pts} ${pad+(len-1)/(len-1)*(w-pad*2)},${h-pad} ${pad},${h-pad}" fill="${color}" opacity="0.06"/>
+      ${grid}
+      <polygon points="${areaPts}" fill="${color}" opacity="0.08"/>
+      <polyline fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="${pts}"/>
+      ${dot}${label}
     </svg>
   </div>`;
 }
+
+loadWatchlist();
 </script>

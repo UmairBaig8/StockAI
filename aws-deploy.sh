@@ -1,19 +1,19 @@
 #!/bin/bash
 set -e
 # StockAI AWS EC2 — one command: creates t3.medium, deploys, prints dashboard URL
-# Usage: MEMORY_DEEPSEEK_API_KEY=sk-... bash aws-deploy.sh
+# Usage: bash aws-deploy.sh
+# Uses .env from repo root (all keys copied to instance)
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
-DEEPSEEK_KEY="${MEMORY_DEEPSEEK_API_KEY:-}"
-
-if [ -z "$DEEPSEEK_KEY" ]; then
-  echo -e "${RED}MEMORY_DEEPSEEK_API_KEY is required${NC}"
-  echo "Usage: MEMORY_DEEPSEEK_API_KEY=sk-... bash aws-deploy.sh"
-  exit 1
-fi
 
 if ! aws sts get-caller-identity &>/dev/null; then
   echo -e "${RED}AWS CLI not authenticated. Run: aws sso login${NC}"
+  exit 1
+fi
+
+# Check .env exists
+if [ ! -f ".env" ]; then
+  echo -e "${RED}.env not found in repo root${NC}"
   exit 1
 fi
 
@@ -44,19 +44,12 @@ aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --po
 echo "  SG: $SG_ID (ports 22, 8000, 8080, 9001)"
 
 # ── 3. User-data (auto-runs on boot) ──
-USER_DATA=$(cat <<EOF | base64 -w0
+USER_DATA=$(cat <<'EOF' | base64 -w0
 #!/bin/bash
 exec > /var/log/stockai-userdata.log 2>&1
 set -e
-export MEMORY_DEEPSEEK_API_KEY="${DEEPSEEK_KEY}"
-export MEMORY_DEEPSEEK_MODEL="${MEMORY_DEEPSEEK_MODEL:-deepseek-chat}"
-export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-test}"
-export TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-test}"
 export HOME=/root
 curl -sSL https://raw.githubusercontent.com/UmairBaig8/StockAI/main/install.sh | bash
-# Enable paper trading (skip 2FA check)
-sleep 10
-docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode" || true
 EOF
 )
 
@@ -86,9 +79,47 @@ PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
   --query 'Reservations[0].Instances[0].PublicIpAddress' --output text --region "$REGION")
 echo "  Public IP: $PUBLIC_IP"
 
-# ── 6. Wait for dashboard to respond ──
-echo -e "${CYAN}>>> Waiting for services (build in progress)...${NC}"
-for i in $(seq 1 90); do
+# ── 6. Wait for SSH ──
+echo -e "${CYAN}>>> Waiting for SSH...${NC}"
+for i in $(seq 1 60); do
+  if ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no -o ConnectTimeout=5 ec2-user@"$PUBLIC_IP" echo "SSH ready" 2>/dev/null; then
+    break
+  fi
+  echo -n "."
+  sleep 5
+done
+
+# ── 7. Copy .env + execution-bin ──
+echo -e "\n${CYAN}>>> Copying .env + execution-bin to instance...${NC}"
+scp -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no .env ec2-user@"$PUBLIC_IP":/tmp/stockai-env
+scp -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no execution/execution-bin ec2-user@"$PUBLIC_IP":/tmp/execution-bin
+ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'sudo bash -c "
+cp /tmp/stockai-env /root/stockai/.env && chmod 600 /root/stockai/.env
+cp /tmp/execution-bin /root/stockai/execution/execution-bin && chmod +x /root/stockai/execution/execution-bin
+# Install docker compose v2 plugin (Amazon Linux 2023 only has v1)
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -sL https://github.com/docker/compose/releases/download/v2.40.2/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+"'
+echo -e "${GREEN}  .env + execution-bin copied, compose v2 installed${NC}"
+
+# ── 8. Rebuild with full .env ──
+echo -e "\n${CYAN}>>> Rebuilding with full .env...${NC}"
+ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'sudo bash -c "
+cd /root/stockai
+docker compose down
+docker compose build
+docker compose up -d
+"'
+
+# ── 9. Enable paper trading ──
+echo -e "\n${CYAN}>>> Enabling paper trading...${NC}"
+sleep 10
+ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'sudo docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode"'
+
+# ── 10. Wait for dashboard ──
+echo -e "${CYAN}>>> Waiting for services...${NC}"
+for i in $(seq 1 60); do
   if curl -sf "http://${PUBLIC_IP}:8000/api/v1/health" &>/dev/null; then
     echo -e "${GREEN}  Services ready!${NC}"
     break
@@ -110,7 +141,7 @@ echo ""
 echo "  Instance: $INSTANCE_ID ($INSTANCE_NAME)"
 echo "  Key:      ${KEY_NAME}.pem"
 echo "  SSH:      ssh -i ${KEY_NAME}.pem ec2-user@$PUBLIC_IP"
-echo "  Logs:     ssh -i ${KEY_NAME}.pem ec2-user@$PUBLIC_IP 'tail -f /var/log/stockai-userdata.log'"
+echo "  Logs:     ssh -i ${KEY_NAME}.pem ec2-user@$PUBLIC_IP 'sudo docker compose -f /root/stockai/docker-compose.yml logs -f'"
 echo ""
 echo "  Terminate: aws ec2 terminate-instances --instance-ids $INSTANCE_ID --region $REGION"
 echo "             aws ec2 delete-security-group --group-id $SG_ID --region $REGION"

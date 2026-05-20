@@ -4,14 +4,14 @@
 
 | Field | Value |
 |-------|-------|
-| **Instance ID** | `i-058cc54d6a71a3064` |
-| **Public IP** | `52.91.29.172` |
+| **Instance ID** | `i-0845fd29ea0f8b328` |
+| **Public IP** | `34.236.237.163` |
 | **Region** | `us-east-1` (N. Virginia) |
 | **Type** | `t3.medium` (2 vCPU, 4 GB RAM) |
 | **AMI** | Amazon Linux 2023 |
-| **EBS** | 8 GB gp3 (⚠️ tight — prune Docker regularly) |
+| **EBS** | 20 GB gp3 |
 | **Key Pair** | `stockai-key.pem` (in repo root) |
-| **Security Group** | `sg-06ad9c996866ee2b5` (ports 22, 8000, 8080) |
+| **Security Group** | `sg-0e816e1f85a798bf1` (ports 22, 8000, 8080, 9001) |
 | **State** | Running |
 | **Account ID** | `arn:aws:iam::453767499603:root` |
 
@@ -29,44 +29,44 @@
 
 | URL | Description |
 |-----|-------------|
-| `http://52.91.29.172:8000` | Dashboard (real-time) |
-| `http://52.91.29.172:8000/api/v1/wallet` | Wallet status (JSON) |
-| `http://52.91.29.172:8000/api/v1/dash` | Trade history + summary |
-| `http://52.91.29.172:8000/api/v1/health` | Health check (+ LanceDB entries) |
-| `http://52.91.29.172:8000/api/v1/services` | All service statuses |
-| `http://52.91.29.172:8000/api/v1/quote/{TICKER}` | Live market quote |
-| `http://52.91.29.172:8000/ws/market` | WebSocket market feed |
-| `http://52.91.29.172:8080` | TOTP 2FA relay |
-| `http://52.91.29.172:9001/health` | Engine health check |
+| `http://34.236.237.163:8000` | Dashboard (real-time) |
+| `http://34.236.237.163:8000/api/v1/wallet` | Wallet status (JSON) |
+| `http://34.236.237.163:8000/api/v1/dash` | Trade history + summary |
+| `http://34.236.237.163:8000/api/v1/health` | Health check (+ LanceDB entries) |
+| `http://34.236.237.163:8000/api/v1/services` | All service statuses |
+| `http://34.236.237.163:8000/api/v1/quote/{TICKER}` | Live market quote |
+| `http://34.236.237.163:8000/ws/market` | WebSocket market feed |
+| `http://34.236.237.163:8080` | TOTP 2FA relay |
+| `http://34.236.237.163:9001/health` | Engine health check |
 
 ## SSH Access
 
 ```bash
-ssh -i stockai-key.pem ec2-user@52.91.29.172
+ssh -i stockai-key.pem ec2-user@34.236.237.163
 ```
 
 ## Useful Commands
 
 ### Check service status
 ```bash
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
 ```
 
 ### View logs
 ```bash
 # Memory/Strategy logs
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker logs stockai-memory-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-memory-1 --tail 50'
 
 # Engine logs
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker logs stockai-engine-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-engine-1 --tail 50'
 
 # Orchestrator logs
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker logs stockai-orchestrator-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-orchestrator-1 --tail 50'
 ```
 
 ### Redeploy after code push
 ```bash
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "
 cd /root/stockai && git pull origin main
 docker compose build memory && docker compose up -d memory
 "'
@@ -98,8 +98,8 @@ ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker exec stockai-redis-1 r
 
 ### Terminate instance
 ```bash
-aws ec2 terminate-instances --instance-ids i-058cc54d6a71a3064 --region us-east-1
-aws ec2 delete-security-group --group-id sg-06ad9c996866ee2b5 --region us-east-1
+aws ec2 terminate-instances --instance-ids i-0845fd29ea0f8b328 --region us-east-1
+aws ec2 delete-security-group --group-id sg-0e816e1f85a798bf1 --region us-east-1
 ```
 
 ## AWS Auth (for re-deploy)
@@ -123,15 +123,16 @@ MEMORY_DEEPSEEK_API_KEY=sk-... bash aws-deploy.sh
 
 ## Known Issues
 
-- **8GB EBS fills up** during Docker builds — run `docker system prune -af` before rebuilding
-- **Rust engine binary** can't be rebuilt in Docker on EC2 (no space) — build natively or locally
-- **Engine 2FA check** blocks paper trades — fixed by setting Redis key `2fa:active`
+- **execution-bin not in git** — must be scp'd after clone (103MB, in .gitignore)
+- **Docker Compose v2** — Amazon Linux 2023 only ships v1; deploy script installs v2 plugin
+- **8GB EBS fills up** during Docker builds — fixed: new instances use 20GB
 
 ## Deployment History
 
 | Date | Commit | Change |
 |------|--------|--------|
-| 2026-05-20 | `259f79a` | Skip 2FA in MOCK_MODE + dashboard WS periodic push + deploy script fixes |
+| 2026-05-20 | `1bb2804` | Fresh deploy: t3.medium + 20GB EBS + full .env copy + compose v2 + paper trading |
+| 2026-05-20 | `259f79a` | Skip 2FA in MOCK_MODE (code fix, engine binary not rebuilt on old instance) |
 | 2026-05-20 | `819b498` | Dashboard WS periodic push every 5s |
 | 2026-05-20 | `10c6476` | Fix main.py indentation bug (WS routes orphaned) + settings_store path |
 | 2026-05-18 | `7d35722` | Forced paper trades, relaxed strategy + advocate |

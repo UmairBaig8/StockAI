@@ -49,7 +49,7 @@
         <div class="card wide">
           <h2>Equity Curve</h2>
           <div class="eq-chart" id="eq-chart">
-            <svg id="eq-svg"><polyline fill="none" stroke="#1e1e2e" stroke-width="1"/></svg>
+            <svg id="eq-svg"><defs><linearGradient id="eqGradUp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00ff88" stop-opacity="0.18"/><stop offset="100%" stop-color="#00ff88" stop-opacity="0"/></linearGradient><linearGradient id="eqGradDown" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff4d5e" stop-opacity="0.18"/><stop offset="100%" stop-color="#ff4d5e" stop-opacity="0"/></linearGradient></defs></svg>
             <div class="pnl-big" id="eq-pnl">₹100,000</div>
             <div class="pnl-sub" id="eq-pnl-pct">+0.00%</div>
           </div>
@@ -411,8 +411,12 @@ function drawEquity(){
   if(eqData.length<2)return;
   const svg=$('eq-svg');const w=svg.clientWidth||400;const h=80;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
   const vals=eqData.map(d=>d.v);const min=Math.min(...vals);const max=Math.max(...vals);const range=max-min||1;
-  const pts=eqData.map((d,i)=>`${i/(eqData.length-1)*w},${h-(d.v-min)/range*h}`).join(' ');
-  svg.innerHTML=`<polyline fill="none" stroke="${eqData[eqData.length-1].v>=eqData[0].v?'#00ff88':'#ff4444'}" stroke-width="1.5" points="${pts}"/>`;
+  const isUp=eqData[eqData.length-1].v>=eqData[0].v;
+  const color=isUp?'#00ff88':'#ff4d5e';
+  const gradId=isUp?'eqGradUp':'eqGradDown';
+  const pts=eqData.map((d,i)=>`${i/(eqData.length-1)*w},${h-(d.v-min)/range*(h-4)-2}`).join(' ');
+  const areaPts=`0,${h} ${pts} ${w},${h}`;
+  svg.innerHTML=`<defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity="0.2"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><polygon points="${areaPts}" fill="url(#${gradId})"/><polyline fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/>`;
 }
 
 // ── Market quotes via WebSocket ──

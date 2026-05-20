@@ -90,16 +90,37 @@ setInterval(()=>$('clock').textContent='IST '+ts(),1000);
 let eqData = [];
 let mkt = {};
 
-// ── Live dashboard via WebSocket (push, no polling) ──
+// ── Live dashboard via WebSocket (push) with HTTP fallback ──
+let _dws = null, _wsReconnectTimer = null, _fallbackTimer = null;
+
 function connectDashboard(){
+  if (_dws && (_dws.readyState === WebSocket.OPEN || _dws.readyState === WebSocket.CONNECTING)) return;
+  if (_wsReconnectTimer) { clearTimeout(_wsReconnectTimer); _wsReconnectTimer = null; }
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const dws = new WebSocket(`${scheme}://${location.host}/ws/dashboard`);
-  dws.onmessage = e => {
+  _dws = new WebSocket(`${scheme}://${location.host}/ws/dashboard`);
+  _dws.onopen = () => {
+    if (_fallbackTimer) { clearTimeout(_fallbackTimer); _fallbackTimer = null; }
+  };
+  _dws.onmessage = e => {
     try { const all = JSON.parse(e.data); if (all.type !== 'dashboard') return; renderDashboard(all); }
     catch(ex) {}
   };
-  dws.onclose = () => { setTimeout(connectDashboard, 3000); };
-  dws.onerror = () => { dws.close(); };
+  _dws.onclose = () => { _dws = null; _wsReconnectTimer = setTimeout(connectDashboard, 3000); };
+  _dws.onerror = () => { _dws.close(); };
+  // Fallback: HTTP poll if WebSocket not connected in 4s
+  _fallbackTimer = setTimeout(() => {
+    if (!_dws || _dws.readyState !== WebSocket.OPEN) pollFallback();
+  }, 4000);
+}
+
+async function pollFallback(){
+  try { const r = await fetch('/api/v1/dash/all'); const all = await r.json(); renderDashboard(all); }
+  catch(e) {}
+  // Keep polling every 3s until WebSocket connects
+  _fallbackTimer = setTimeout(() => {
+    if (!_dws || _dws.readyState !== WebSocket.OPEN) pollFallback();
+    else _fallbackTimer = null;
+  }, 3000);
 }
 
 function renderDashboard(all){

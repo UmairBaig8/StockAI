@@ -50,6 +50,8 @@ class MarketDataBridge:
         self._running = False
         self._latest: dict[str, dict] = {}
         self.callbacks: list = []
+        self._bad_tickers: set[str] = set()
+        self._ticker_failures: dict[str, int] = {}
 
     def add_client(self, ws: WebSocket):
         self.clients.append(ws)
@@ -101,7 +103,9 @@ class MarketDataBridge:
         if data is None or data.empty:
             return []
 
-        for yf_ticker in NSE_TICKERS:
+        for yf_ticker in NSE_TICKERS[:]:
+            if yf_ticker in self._bad_tickers:
+                continue
             short = TICKER_MAP.get(yf_ticker, yf_ticker.replace(".NS", ""))
             try:
                 if yf_ticker in data.columns.get_level_values(0):
@@ -109,6 +113,11 @@ class MarketDataBridge:
                 elif len(NSE_TICKERS) == 1:
                     df = data
                 else:
+                    # Ticker not in download results — track failure
+                    self._ticker_failures[yf_ticker] = self._ticker_failures.get(yf_ticker, 0) + 1
+                    if self._ticker_failures[yf_ticker] >= 3:
+                        self._bad_tickers.add(yf_ticker)
+                        logger.warning(f"Removed bad ticker from poll: {yf_ticker} (3 consecutive failures)")
                     continue
 
                 if df.empty:

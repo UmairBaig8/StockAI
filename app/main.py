@@ -56,6 +56,9 @@ def _cached_content(template_name: str) -> str:
     return content.replace("</body>", "").replace("</html>", "")
 
 
+_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="28" height="28" role="img" aria-label="StockAI"><defs><linearGradient id="a" x1="12" y1="8" x2="52" y2="58"><stop stop-color="#00ff88"/><stop offset="1" stop-color="#52a8ff"/></linearGradient></defs><rect width="64" height="64" rx="18" fill="#0b0b10"/><path d="M17 43.5 27.5 33l7 6.8L48 20" fill="none" stroke="url(#a)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 49h34" stroke="#263044" stroke-width="3" stroke-linecap="round"/><circle cx="48" cy="20" r="4" fill="#00ff88"/></svg>'
+
+
 def render_page(template_name: str, title: str, active: str) -> str:
     content = _cached_content(template_name)
     nav = "".join(
@@ -68,14 +71,14 @@ def render_page(template_name: str, title: str, active: str) -> str:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{title}</title>
-  <link rel="icon" href="/static/img/app-icon.svg" type="image/svg+xml">
+  <link rel="icon" href="data:image/svg+xml,{_ICON_SVG}" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/system.css">
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Main navigation">
-      <a class="brand" href="/"><img src="/static/img/app-icon.svg" alt="" width="28" height="28"><span>StockAI</span></a>
+      <a class="brand" href="/">{_ICON_SVG}<span>StockAI</span></a>
       {nav}
       <a href="http://3.85.55.232:8080" rel="noopener">2FA Relay</a>
     </aside>

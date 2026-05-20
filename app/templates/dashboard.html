@@ -1,6 +1,25 @@
 {% block content %}
 <style>
   .wallet-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .session-banner{padding:12px 16px;border-radius:12px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-size:0.75rem}
+  .session-banner.open{background:linear-gradient(135deg,rgba(0,255,136,0.08),rgba(0,255,136,0.02));border:1px solid rgba(0,255,136,0.2)}
+  .session-banner.closed{background:linear-gradient(135deg,rgba(82,168,255,0.08),rgba(82,168,255,0.02));border:1px solid rgba(82,168,255,0.2)}
+  .session-banner.preopen{background:linear-gradient(135deg,rgba(255,193,7,0.08),rgba(255,193,7,0.02));border:1px solid rgba(255,193,7,0.2)}
+  .session-banner .pulse{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .session-banner.open .pulse{background:var(--accent);animation:pulse 2s infinite}
+  .session-banner.closed .pulse{background:var(--focus)}
+  .session-banner.preopen .pulse{background:var(--warn);animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  .session-banner .info{flex:1}
+  .session-banner .phase{font-weight:700;font-size:0.82rem}
+  .session-banner .countdown{font-size:0.68rem;color:var(--muted);margin-top:2px}
+  .session-banner .countdown b{color:var(--fg);font-weight:700}
+  .closed-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:8px}
+  .closed-summary .cs-item{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:8px;padding:8px;text-align:center}
+  .closed-summary .cs-val{font-size:0.9rem;font-weight:800}
+  .closed-summary .cs-lbl{font-size:0.55rem;color:var(--muted);text-transform:uppercase;margin-top:2px}
+  .mkt-closed-overlay{position:relative}
+  .mkt-closed-overlay::after{content:'MARKET CLOSED';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(11,11,16,0.7);font-size:1.2rem;font-weight:800;color:var(--muted);letter-spacing:0.1em;border-radius:12px;z-index:5;pointer-events:none}
 </style>
       <header>
         <h1>StockAI <span class="muted">Cockpit</span></h1>
@@ -13,9 +32,17 @@
             <span><span class="dot unknown" id="dot-llm"></span><span class="lbl">LLM</span></span>
           </div>
           <span class="badge" id="clock">--</span>
-          <span id="mkt-status" style="font-size:0.55rem;display:flex;align-items:center;gap:4px"><span class="dot offline" id="mkt-dot"></span><span id="mkt-label">...</span></span>
         </div>
       </header>
+
+      <!-- Session Banner -->
+      <div class="session-banner closed" id="session-banner">
+        <span class="pulse"></span>
+        <div class="info">
+          <div class="phase" id="session-phase">Loading...</div>
+          <div class="countdown" id="session-countdown">--</div>
+        </div>
+      </div>
 
       <div class="grid">
         <!-- Equity Curve -->
@@ -87,16 +114,103 @@ const ts = () => new Date().toLocaleTimeString('en-IN',{hour12:false,timeZone:'A
 const fmtT = t => t?t.split('T')[1]?.split('.')[0]?.slice(0,5):'--';
 setInterval(()=>$('clock').textContent='IST '+ts(),1000);
 
-// ── Market hours indicator ──
-(function(){
+// ── Market session logic ──
+function getMarketState(){
   const now=new Date();
-  const ist=new Date(now.toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+  const istStr=now.toLocaleString('en-US',{timeZone:'Asia/Kolkata'});
+  const ist=new Date(istStr);
   const h=ist.getHours(),m=ist.getMinutes(),d=ist.getDay();
-  const open=h*60+m>=555&&h*60+m<930&&d>=1&&d<=5;
-  const dot=$('mkt-dot'),lbl=$('mkt-label');
-  if(dot)dot.className='dot '+(open?'online':'offline');
-  if(lbl)lbl.textContent=open?'NSE OPEN':'NSE CLOSED';
-})();
+  const mins=h*60+m;
+  const isWeekday=d>=1&&d<=5;
+  // Pre-open: 9:00-9:15
+  if(isWeekday&&mins>=540&&mins<555)return{phase:'preopen',label:'Pre-Open Session',open:false};
+  // Market hours: 9:15-15:30
+  if(isWeekday&&mins>=555&&mins<930)return{phase:'open',label:'Market Open',open:true};
+  // After hours weekday
+  if(isWeekday&&mins>=930)return{phase:'closed',label:'Market Closed',open:false,next:'next_open'};
+  // Weekend
+  if(!isWeekday)return{phase:'closed',label:'Market Closed (Weekend)',open:false,next:'next_open'};
+  // Before market open weekday
+  return{phase:'closed',label:'Market Closed',open:false,next:'next_open'};
+}
+
+function getNextSession(){
+  const now=new Date();
+  const istStr=now.toLocaleString('en-US',{timeZone:'Asia/Kolkata'});
+  const ist=new Date(istStr);
+  const h=ist.getHours(),m=ist.getMinutes(),d=ist.getDay();
+  const mins=h*60+m;
+  const isWeekday=d>=1&&d<=5;
+
+  if(isWeekday&&mins<540){
+    // Before market opens today
+    const target=new Date(ist);target.setHours(9,15,0,0);
+    return{text:'Opens at 9:15 AM',ms:target-ist};
+  }
+  if(isWeekday&&mins>=540&&mins<555){
+    // Pre-open
+    const target=new Date(ist);target.setHours(9,15,0,0);
+    return{text:'Trading starts at 9:15 AM',ms:target-ist};
+  }
+  if(isWeekday&&mins>=555&&mins<930){
+    // Market open — show time remaining
+    const target=new Date(ist);target.setHours(15,30,0,0);
+    return{text:'Closes at 3:30 PM',ms:target-ist};
+  }
+  // After hours or weekend — find next weekday 9:15
+  let next=new Date(ist);
+  next.setDate(next.getDate()+1);
+  next.setHours(9,15,0,0);
+  while(next.getDay()===0||next.getDay()===6){
+    next.setDate(next.getDate()+1);
+  }
+  const dayName=next.toLocaleDateString('en-IN',{weekday:'short',timeZone:'Asia/Kolkata'});
+  return{text:`Next session: ${dayName} 9:15 AM`,ms:next-ist};
+}
+
+function fmtCountdown(ms){
+  if(ms<=0)return'--';
+  const d=Math.floor(ms/86400000);
+  const h=Math.floor((ms%86400000)/3600000);
+  const m=Math.floor((ms%3600000)/60000);
+  const s=Math.floor((ms%60000)/1000);
+  if(d>0)return`<b>${d}d ${h}h ${m}m</b> remaining`;
+  return`<b>${h}h ${m}m ${s}s</b> remaining`;
+}
+
+let lastState = null;
+let notifiedPreOpen = false;
+
+function updateSessionBanner(){
+  const state=getMarketState();
+  const next=getNextSession();
+  const banner=$('session-banner');
+  banner.className='session-banner '+state.phase;
+  $('session-phase').textContent=state.label;
+  $('session-countdown').innerHTML=state.open?
+    `Session ends at 3:30 PM — <b>${fmtCountdown(next.ms)}</b>`:
+    `${next.text} — ${fmtCountdown(next.ms)}`;
+
+  // State transition notifications
+  if(lastState && lastState !== state.phase){
+    if(state.phase==='open') showToast('Market is now OPEN — live trading active', 'success', 6000);
+    else if(state.phase==='preopen' && !notifiedPreOpen){
+      showToast('Pre-open session starts in 15 minutes', 'warning', 8000);
+      notifiedPreOpen=true;
+    }
+    else if(state.phase==='closed' && lastState==='open') showToast('Market closed — switching to review mode', 'info', 5000);
+  }
+  lastState=state.phase;
+
+  // 15-min warning before market open
+  if(!state.open && next.ms > 0 && next.ms <= 900000 && !notifiedPreOpen){
+    showToast('Market opens in 15 minutes — get ready', 'warning', 10000);
+    notifiedPreOpen=true;
+  }
+  if(state.open) notifiedPreOpen=false;
+}
+updateSessionBanner();
+setInterval(updateSessionBanner,1000);
 
 let eqData = [];
 let mkt = {};
@@ -110,12 +224,12 @@ let mkt = {};
     const dash=d.dash||{}, s=dash.summary||{};
     const pnl=s.pnl||0, pnlPct=s.pnl_percent||0, inv=s.invested||0;
     const total=inv+pnl;
-    const eqPnlEl=document.getElementById('eq-pnl');
+    const eqPnlEl=$('eq-pnl');
     if(eqPnlEl){eqPnlEl.textContent='₹'+total.toLocaleString('en-IN',{maximumFractionDigits:0});eqPnlEl.style.color=pnl>=0?'var(--accent)':'var(--err)';}
-    const eqPctEl=document.getElementById('eq-pnl-pct');
+    const eqPctEl=$('eq-pnl-pct');
     if(eqPctEl){eqPctEl.textContent=(pnlPct>=0?'+':'')+pnlPct.toFixed(2)+'%';eqPctEl.style.color=pnlPct>=0?'var(--accent)':'var(--err)';}
     if(dash.trades?.length){
-      document.getElementById('trades-body').innerHTML=dash.trades.slice(0,8).map(t=>
+      $('trades-body').innerHTML=dash.trades.slice(0,8).map(t=>
         `<tr><td>${fmtT(t.time)}</td><td>${t.ticker}</td><td>${t.dir.slice(0,1)}</td><td>${t.qty||0}</td><td>${(t.entry_price||0).toFixed(0)}</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">${(t.pnl>0?'+':'')+t.pnl.toFixed(2)}%</td></tr>`
       ).join('');
     }
@@ -123,12 +237,12 @@ let mkt = {};
     const w=d.wallet||{};
     if(w.initial_capital){
       const cap=w.initial_capital||100000,winv=w.invested||0,avail=w.available||cap,wpnl=w.realized_pnl||w.total_pnl||0;
-      const wc=document.getElementById('w-capital');if(wc)wc.textContent='₹'+cap.toLocaleString('en-IN',{maximumFractionDigits:0});
-      const wi=document.getElementById('w-invested');if(wi)wi.textContent='₹'+winv.toLocaleString('en-IN',{maximumFractionDigits:0});
-      const wa=document.getElementById('w-available');if(wa)wa.textContent='₹'+avail.toLocaleString('en-IN',{maximumFractionDigits:0});
-      const wp=document.getElementById('w-pnl');if(wp){wp.textContent=(wpnl>=0?'+':'')+'₹'+Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});wp.className='val '+(wpnl>=0?'green':'red');}
+      const wc=$('w-capital');if(wc)wc.textContent='₹'+cap.toLocaleString('en-IN',{maximumFractionDigits:0});
+      const wi=$('w-invested');if(wi)wi.textContent='₹'+winv.toLocaleString('en-IN',{maximumFractionDigits:0});
+      const wa=$('w-available');if(wa)wa.textContent='₹'+avail.toLocaleString('en-IN',{maximumFractionDigits:0});
+      const wp=$('w-pnl');if(wp){wp.textContent=(wpnl>=0?'+':'')+'₹'+Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});wp.className='val '+(wpnl>=0?'green':'red');}
       const keys=Object.keys(w.positions||{});
-      const pr=document.getElementById('positions-row');
+      const pr=$('positions-row');
       if(pr){
         if(!keys.length)pr.innerHTML='<div style="color:var(--muted);font-size:0.65rem">No open positions</div>';
         else pr.innerHTML=keys.map(t=>{const p=w.positions[t];return `<div class="pos-card"><span class="tkr">${t}</span><span class="entry">@₹${p.avg_price.toFixed(0)}</span><span class="pnl" style="color:var(--muted)">Qty: ${p.qty}</span></div>`;}).join('');
@@ -137,7 +251,7 @@ let mkt = {};
     // Services
     const svc=d.services||{};
     const map={mem:'memory',eng:'engine',orch:'orchestrator',rdb:'redis',llm:'llm'};
-    Object.entries(map).forEach(([id,key])=>{const el=document.getElementById('dot-'+id);if(el)el.className='dot '+(svc[key]?.online?'online':'offline');});
+    Object.entries(map).forEach(([id,key])=>{const el=$('dot-'+id);if(el)el.className='dot '+(svc[key]?.online?'online':'offline');});
   }catch(e){}
 })();
 
@@ -170,10 +284,12 @@ const closeServices = connectWS('/ws/services', d => {
   const svc = d.services;
   const map = {mem:'memory',eng:'engine',orch:'orchestrator',rdb:'redis',llm:'llm'};
   Object.entries(map).forEach(([id,key]) => {
-    const el = document.getElementById('dot-'+id);
+    const el = $('dot-'+id);
     if (el) el.className = 'dot ' + (svc[key]?.online ? 'online' : 'offline');
   });
 });
+
+let lastNotifiedEvent = null;
 
 // ── 2. Dashboard WS (trades + equity + events — pushes on trade/event) ──
 const closeDashboard = connectWS('/ws/dashboard', d => {
@@ -182,24 +298,32 @@ const closeDashboard = connectWS('/ws/dashboard', d => {
   const s = dash.summary || {};
   const pnl = s.pnl || 0, pnlPct = s.pnl_percent || 0, inv = s.invested || 0;
   const total = inv + pnl;
-  document.getElementById('eq-pnl').textContent = '₹' + total.toLocaleString('en-IN',{maximumFractionDigits:0});
-  document.getElementById('eq-pnl').style.color = pnl >= 0 ? 'var(--accent)' : 'var(--err)';
-  document.getElementById('eq-pnl-pct').textContent = (pnlPct>=0?'+':'') + pnlPct.toFixed(2) + '%';
-  document.getElementById('eq-pnl-pct').style.color = pnlPct >= 0 ? 'var(--accent)' : 'var(--err)';
+  $('eq-pnl').textContent = '₹' + total.toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('eq-pnl').style.color = pnl >= 0 ? 'var(--accent)' : 'var(--err)';
+  $('eq-pnl-pct').textContent = (pnlPct>=0?'+':'') + pnlPct.toFixed(2) + '%';
+  $('eq-pnl-pct').style.color = pnlPct >= 0 ? 'var(--accent)' : 'var(--err)';
   eqData.push({t:Date.now(),v:total}); if(eqData.length>200) eqData.shift();
   drawEquity();
 
-  const tb = document.getElementById('trades-body');
+  const tb = $('trades-body');
   if (dash.trades?.length) tb.innerHTML = dash.trades.slice(0,8).map(t =>
     `<tr><td>${fmtT(t.time)}</td><td>${t.ticker}</td><td>${t.dir.slice(0,1)}</td><td>${t.qty||0}</td><td>${(t.entry_price||0).toFixed(0)}</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">${(t.pnl>0?'+':'')+t.pnl.toFixed(2)}%</td></tr>`
   ).join('');
 
   const last = dash.events?.find(e => e.msg.includes('BUY')||e.msg.includes('SELL')||e.msg.includes('best pick')||e.msg.includes('rotate'));
-  if (last) {
+  if (last && last.msg !== lastNotifiedEvent) {
     const isBuy = last.msg.includes('BUY'), isSell = last.msg.includes('SELL');
-    document.getElementById('signal-strip').innerHTML = `<span class="dot ${isBuy?'buy':isSell?'sell':'idle'}"></span><span id="signal-text">${last.msg}</span>`;
+    $('signal-strip').innerHTML = `<span class="dot ${isBuy?'buy':isSell?'sell':'idle'}"></span><span id="signal-text">${last.msg}</span>`;
+    
+    // Toast notification for trade signals
+    if(isBuy) showToast(`BUY signal: ${last.msg}`, 'success', 6000);
+    else if(isSell) showToast(`SELL signal: ${last.msg}`, 'warning', 6000);
+    else showToast(last.msg, 'info', 5000);
+    lastNotifiedEvent = last.msg;
   }
 });
+
+let prevPositions = null;
 
 // ── 3. Wallet WS (positions + P&L — pushes on change) ──
 const closeWallet = connectWS('/ws/wallet', d => {
@@ -210,14 +334,14 @@ const closeWallet = connectWS('/ws/wallet', d => {
   const winv = w.invested || 0;
   const avail = w.available || cap;
   const wpnl = w.realized_pnl || w.total_pnl || 0;
-  document.getElementById('w-capital').textContent = '₹' + cap.toLocaleString('en-IN',{maximumFractionDigits:0});
-  document.getElementById('w-invested').textContent = '₹' + winv.toLocaleString('en-IN',{maximumFractionDigits:0});
-  document.getElementById('w-available').textContent = '₹' + avail.toLocaleString('en-IN',{maximumFractionDigits:0});
-  document.getElementById('w-pnl').textContent = (wpnl>=0?'+':'') + '₹' + Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});
-  document.getElementById('w-pnl').className = 'val ' + (wpnl>=0?'green':'red');
+  $('w-capital').textContent = '₹' + cap.toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-invested').textContent = '₹' + winv.toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-available').textContent = '₹' + avail.toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-pnl').textContent = (wpnl>=0?'+':'') + '₹' + Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-pnl').className = 'val ' + (wpnl>=0?'green':'red');
 
   const keys = Object.keys(w.positions || {});
-  const row = document.getElementById('positions-row');
+  const row = $('positions-row');
   if (!keys.length) row.innerHTML = '<div style="color:var(--muted);font-size:0.65rem">No open positions</div>';
   else {
     row.innerHTML = keys.map(t => {
@@ -227,6 +351,16 @@ const closeWallet = connectWS('/ws/wallet', d => {
       return `<div class="pos-card"><span class="tkr">${t}</span><span class="entry">@₹${p.avg_price.toFixed(0)} → ₹${cur.toFixed(0)}</span><span class="pnl" style="color:${color}">${(pp>=0?'+':'')+pp.toFixed(2)}%</span><span class="age">Qty: ${p.qty}</span></div>`;
     }).join('');
   }
+
+  // Detect position changes
+  if(prevPositions !== null){
+    const prevSet=new Set(prevPositions), currSet=new Set(keys);
+    const opened=[...currSet].filter(t=>!prevSet.has(t));
+    const closed=[...prevSet].filter(t=>!currSet.has(t));
+    opened.forEach(t=>showToast(`Position opened: ${t}`, 'success', 4000));
+    closed.forEach(t=>showToast(`Position closed: ${t}`, 'info', 4000));
+  }
+  prevPositions=[...keys];
 });
 
 // ── Cleanup on page leave ──
@@ -234,7 +368,7 @@ window.addEventListener('beforeunload', () => { closeServices(); closeDashboard(
 
 function drawEquity(){
   if(eqData.length<2)return;
-  const svg=document.getElementById('eq-svg');const w=svg.clientWidth||400;const h=80;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  const svg=$('eq-svg');const w=svg.clientWidth||400;const h=80;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
   const vals=eqData.map(d=>d.v);const min=Math.min(...vals);const max=Math.max(...vals);const range=max-min||1;
   const pts=eqData.map((d,i)=>`${i/(eqData.length-1)*w},${h-(d.v-min)/range*h}`).join(' ');
   svg.innerHTML=`<polyline fill="none" stroke="${eqData[eqData.length-1].v>=eqData[0].v?'#00ff88':'#ff4444'}" stroke-width="1.5" points="${pts}"/>`;
@@ -251,7 +385,13 @@ function drawEquity(){
 })();
 function renderWatch(){
   const t=$('watch-body');const order=Object.keys(mkt).sort().slice(0,10);
-  if(!order.length){t.innerHTML='<tr><td colspan="5" style="color:var(--muted)">Connecting...</td></tr>';return}
+  if(!order.length){
+    const state=getMarketState();
+    t.innerHTML=state.open?
+      '<tr><td colspan="5" style="color:var(--muted)">Connecting...</td></tr>':
+      '<tr><td colspan="5" style="color:var(--muted)">Market closed — prices update at open</td></tr>';
+    return;
+  }
   t.innerHTML=order.map(tk=>{
     const d=mkt[tk];if(!d)return `<tr><td>${tk}</td><td colspan="4" style="color:var(--muted)">-</td></tr>`;
     const ch=((d.last_price-d.bid)/d.bid*100).toFixed(2);const color=ch>=0?'var(--accent)':'var(--err)';

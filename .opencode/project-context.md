@@ -18,3 +18,21 @@
 - Strategy's _listen_trade_results creates a separate Redis connection; connection leaks could occur on rapid reconnect failures
 - Daily loss limit uses wallet.total_equity — make sure wallet is correctly tracking realized P&L
 - Postmortem threshold 0.1% should match postmortem_min_loss_pct in config
+
+## 2026-05-20 — Dynamic Dashboard + Notification System
+
+[Root Cause] Dashboard was static — no market session awareness, no countdown timers, no real-time notifications for trades or market events.
+
+[Surgical Fix] 2 files changed:
+- `app/templates/base.html`: Added global toast notification system (`showToast()`) with 4 severity levels (info/success/warning/error), auto-dismiss, slide-in animation, manual close button
+- `app/templates/dashboard.html`: 
+  - Session banner with 3 states (open/closed/preopen) + live countdown timer
+  - Market state detection (IST timezone, NSE hours 9:15-15:30, Mon-Fri)
+  - Auto-notifications: market open/close transitions, 15-min pre-open warning, BUY/SELL signals, position opens/closes
+  - State tracking to prevent duplicate notifications (`lastNotifiedEvent`, `prevPositions`, `notifiedPreOpen`)
+
+[Gotchas to Avoid]
+- Toast container must be in base.html (not dashboard.html) to work across all pages
+- Market state uses `toLocaleString('en-US',{timeZone:'Asia/Kolkata'})` — must convert to Date object again for accurate IST time
+- `notifiedPreOpen` flag resets when market opens, re-triggers only once per pre-open phase
+- Position change detection compares key arrays — won't detect partial fills or quantity changes, only open/close events

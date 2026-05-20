@@ -23,6 +23,23 @@
     <main class="main">
       {% block content %}{% endblock %}
     </main>
+
+    <!-- Toast notifications -->
+    <div id="toast-container" style="position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:320px;pointer-events:none"></div>
   </div>
+
+  <script>
+    window.showToast = function(msg, type='info', duration=4000){
+      const c=document.getElementById('toast-container');if(!c)return;
+      const colors={info:'var(--focus)',success:'var(--accent)',warning:'var(--warn)',error:'var(--err)'};
+      const icons={info:'ℹ',success:'✓',warning:'⚠',error:'✗'};
+      const t=document.createElement('div');
+      t.style.cssText=`pointer-events:auto;background:var(--surface-2);border:1px solid var(--border-soft);border-left:3px solid ${colors[type]||colors.info};border-radius:8px;padding:10px 14px;font-size:0.72rem;color:var(--fg);box-shadow:0 4px 12px rgba(0,0,0,0.4);opacity:0;transform:translateX(20px);transition:all 0.3s ease`;
+      t.innerHTML=`<div style="display:flex;align-items:start;gap:8px"><span style="flex-shrink:0;font-size:0.85rem">${icons[type]||icons.info}</span><span style="flex:1;line-height:1.3">${msg}</span><button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:0 0 0 4px">×</button></div>`;
+      c.appendChild(t);
+      requestAnimationFrame(()=>{t.style.opacity='1';t.style.transform='translateX(0)'});
+      setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(20px)';setTimeout(()=>t.remove(),300)},duration);
+    };
+  </script>
 </body>
 </html>

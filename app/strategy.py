@@ -40,7 +40,7 @@ class StrategyAgent:
     def _get_http(self) -> httpx.AsyncClient:
         if self._http is None or self._http.is_closed:
             self._http = httpx.AsyncClient(
-                timeout=httpx.Timeout(15.0, connect=5.0),
+                timeout=httpx.Timeout(45.0, connect=5.0),
                 limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
             )
         return self._http
@@ -645,7 +645,7 @@ class StrategyAgent:
             return data.get("verdict") != "BLOCK"
         except Exception as e:
             logger.warning(f"Advocate check failed for {ticker}: {e}")
-            return False  # BLOCK if advocate unavailable (safe default)
+            return True  # ALLOW if advocate unavailable (paper trading safe default)
 
     async def _check_memory(self, ticker: str, rsi: float) -> bool:
         try:

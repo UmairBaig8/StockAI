@@ -1,6 +1,6 @@
 # StockAI AWS Environment
 
-## Current Instance (as of 2026-05-18)
+## Current Instance (as of 2026-05-20)
 
 | Field | Value |
 |-------|-------|
@@ -9,6 +9,7 @@
 | **Region** | `us-east-1` (N. Virginia) |
 | **Type** | `t3.medium` (2 vCPU, 4 GB RAM) |
 | **AMI** | Amazon Linux 2023 |
+| **EBS** | 8 GB gp3 (⚠️ tight — prune Docker regularly) |
 | **Key Pair** | `stockai-key.pem` (in repo root) |
 | **Security Group** | `sg-06ad9c996866ee2b5` (ports 22, 8000, 8080) |
 | **State** | Running |
@@ -22,6 +23,7 @@
 | **Orchestrator** | 8080 | Go (Redis pub/sub, scheduler) | Running |
 | **Engine** | 9001 (internal) | Rust (execution engine) | Running |
 | **Redis** | 6379 | Redis 7 Alpine | Healthy |
+| **PostgreSQL** | 5432 | Postgres 16 Alpine | Healthy |
 
 ## Endpoints
 
@@ -35,6 +37,7 @@
 | `http://52.91.29.172:8000/api/v1/quote/{TICKER}` | Live market quote |
 | `http://52.91.29.172:8000/ws/market` | WebSocket market feed |
 | `http://52.91.29.172:8080` | TOTP 2FA relay |
+| `http://52.91.29.172:9001/health` | Engine health check |
 
 ## SSH Access
 
@@ -65,32 +68,32 @@ ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker logs stockai-orchestra
 ```bash
 ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
 cd /root/stockai && git pull origin main
-docker compose build
-docker compose up -d --force-recreate
+docker compose build memory && docker compose up -d memory
 "'
 ```
 
-### Rebuild single service
+### Rebuild engine (Rust binary changes)
 ```bash
-# Memory only (Python, fast rebuild)
+# On EC2: install Rust natively, then build
 ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
-cd /root/stockai && git pull origin main
-docker compose build memory && docker compose up -d memory
-"'
-
-# Engine only (Rust binary is pre-built, fast)
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
-cd /root/stockai && git pull origin main
+cd /root/stockai/execution && cargo build --release --bin execution
+cp target/release/execution ./execution-bin
 docker compose build engine && docker compose up -d engine
 "'
 ```
 
-### Rebuild engine binary locally (if Rust code changes)
+### Free disk space (when 8GB fills up)
 ```bash
-docker run --rm --platform linux/amd64 \
-  -v $(pwd)/execution:/build -w /build \
-  rust:1.95-slim sh -c \
-  "apt-get update -qq && apt-get install -y -qq pkg-config libssl-dev && cargo build --bin execution && cp target/debug/execution /build/execution-bin"
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
+docker compose down
+docker system prune -af --volumes
+docker compose up -d
+"'
+```
+
+### Enable paper trading (if 2FA blocks trades)
+```bash
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode"'
 ```
 
 ### Terminate instance
@@ -109,18 +112,28 @@ aws login
 MEMORY_DEEPSEEK_API_KEY=sk-... bash aws-deploy.sh
 ```
 
-## Pipeline Status (2026-05-18)
+## Pipeline Status (2026-05-20)
 
 - Paper trading: **Active** — forced trades every 5 min + natural RSI signals
 - Postmortems: **Active** — LanceDB stores analysis for every loss
 - Evolution memory: **Active** — vector similarity checks before each trade
 - Devil's Advocate: **Active** — LLM reviews every natural signal (relaxed for paper mode)
-- 2FA Telegram: Offline (bot token = "test")
+- 2FA Telegram: Offline (bot token = "test") — paper mode bypasses via Redis key `2fa:active`
+- Dashboard WS: **Fixed** — periodic push every 5s (was event-only)
+
+## Known Issues
+
+- **8GB EBS fills up** during Docker builds — run `docker system prune -af` before rebuilding
+- **Rust engine binary** can't be rebuilt in Docker on EC2 (no space) — build natively or locally
+- **Engine 2FA check** blocks paper trades — fixed by setting Redis key `2fa:active`
 
 ## Deployment History
 
 | Date | Commit | Change |
 |------|--------|--------|
+| 2026-05-20 | `259f79a` | Skip 2FA in MOCK_MODE + dashboard WS periodic push + deploy script fixes |
+| 2026-05-20 | `819b498` | Dashboard WS periodic push every 5s |
+| 2026-05-20 | `10c6476` | Fix main.py indentation bug (WS routes orphaned) + settings_store path |
 | 2026-05-18 | `7d35722` | Forced paper trades, relaxed strategy + advocate |
 | 2026-05-18 | `749a86a` | Pre-built engine binary (avoids Rust OOM on t2.small) |
 | 2026-05-18 | `f706906` | Paper pipeline fixes (advocate, market state, P&L) |

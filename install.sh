@@ -89,6 +89,16 @@ docker compose up -d 2>/dev/null || docker-compose up -d
 
 sleep 5
 
+# ── Enable paper trading (skip 2FA check in engine) ──
+echo -e "\n${CYAN}>>> Enabling paper trading mode...${NC}"
+for i in $(seq 1 30); do
+  if docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode" &>/dev/null; then
+    echo -e "${GREEN}  Paper trading enabled${NC}"
+    break
+  fi
+  sleep 2
+done
+
 PUBLIC_IP=$(curl -s http://checkip.amazonaws.com 2>/dev/null || echo "localhost")
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════╗${NC}"

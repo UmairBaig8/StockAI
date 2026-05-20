@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     sentiment_llm_provider: Optional[LLMProvider] = None
     macro_llm_provider: Optional[LLMProvider] = None
 
+    # Per-agent LLM model overrides
+    critic_llm_model: str = ""
+    researcher_llm_model: str = ""
+    advocate_llm_model: str = ""
+    sentiment_llm_model: str = ""
+    macro_llm_model: str = ""
+
     # Gemini
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
@@ -70,6 +77,17 @@ class Settings(BaseSettings):
             "macro": self.macro_llm_provider,
         }
         return overrides.get(agent) or self.llm_provider
+
+    def agent_model(self, agent: str) -> str:
+        """Get LLM model for a specific agent, empty string means use provider default."""
+        overrides = {
+            "critic": self.critic_llm_model,
+            "researcher": self.researcher_llm_model,
+            "advocate": self.advocate_llm_model,
+            "sentiment": self.sentiment_llm_model,
+            "macro": self.macro_llm_model,
+        }
+        return overrides.get(agent, "")
 
 
 @lru_cache

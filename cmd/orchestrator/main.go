@@ -366,6 +366,7 @@ func pushTradeToDash(result TradeResult, memoryURL string) {
 		"dir":         result.Direction,
 		"qty":         result.Quantity,
 		"entry_price": result.EntryPrice,
+		"exit_price":  result.ExitPrice,
 		"pnl":         result.PnLPct,
 		"status":      result.Status,
 	}

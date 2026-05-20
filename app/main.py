@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 import time
 
 from .config import get_settings
+from .llm import LLMProvider
 from .market_data import MarketDataBridge
 from .router import router, set_bridge
 from .strategy import StrategyAgent
@@ -97,6 +98,30 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    # Bridge settings_store per-agent LLM overrides into config.Settings
+    try:
+        from .settings_store import load as load_store
+        store = load_store()
+        provider_map = {
+            "critic": ("llm_critic_provider", "llm_critic_model"),
+            "researcher": ("llm_researcher_provider", "llm_researcher_model"),
+            "advocate": ("llm_advocate_provider", "llm_advocate_model"),
+            "sentiment": ("llm_sentiment_provider", "llm_sentiment_model"),
+            "macro": ("llm_macro_provider", "llm_macro_model"),
+        }
+        for agent, (prov_key, model_key) in provider_map.items():
+            prov_val = store.get(prov_key, "").strip()
+            if prov_val:
+                try:
+                    setattr(settings, f"{agent}_llm_provider", LLMProvider(prov_val))
+                except ValueError:
+                    pass
+            model_val = store.get(model_key, "").strip()
+            if model_val:
+                setattr(settings, f"{agent}_llm_model", model_val)
+    except Exception:
+        pass
 
     app = FastAPI(
         title="StockAI Memory Service",

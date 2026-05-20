@@ -278,28 +278,29 @@ def create_llm(settings) -> LLMAdapter:
 
 def create_llm_for_agent(settings, agent: str) -> LLMAdapter:
     provider = settings.agent_provider(agent)
+    model_override = settings.agent_model(agent) if hasattr(settings, 'agent_model') else ""
 
     if provider == LLMProvider.GEMINI:
-        llm = GeminiAdapter(api_key=settings.gemini_api_key, model=settings.gemini_model)
+        llm = GeminiAdapter(api_key=settings.gemini_api_key, model=model_override or settings.gemini_model)
     elif provider == LLMProvider.OPENAI:
         llm = OpenAIAdapter(
             api_key=settings.openai_api_key,
-            model=settings.openai_model,
+            model=model_override or settings.openai_model,
             base_url=settings.openai_base_url or None,
         )
     elif provider == LLMProvider.ANTHROPIC:
-        llm = AnthropicAdapter(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
+        llm = AnthropicAdapter(api_key=settings.anthropic_api_key, model=model_override or settings.anthropic_model)
     elif provider == LLMProvider.DEEPSEEK:
-        llm = DeepSeekAdapter(api_key=settings.deepseek_api_key, model=settings.deepseek_model)
+        llm = DeepSeekAdapter(api_key=settings.deepseek_api_key, model=model_override or settings.deepseek_model)
     elif provider == LLMProvider.BEDROCK:
         llm = BedrockAdapter(
             aws_access_key=settings.aws_access_key_id,
             aws_secret_key=settings.aws_secret_access_key,
             region=settings.aws_region,
-            model=settings.bedrock_model,
+            model=model_override or settings.bedrock_model,
         )
     elif provider == LLMProvider.OLLAMA:
-        llm = OllamaAdapter(base_url=settings.ollama_base_url, model=settings.ollama_model)
+        llm = OllamaAdapter(base_url=settings.ollama_base_url, model=model_override or settings.ollama_model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
 

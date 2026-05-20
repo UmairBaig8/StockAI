@@ -141,6 +141,7 @@ class DashTrade(BaseModel):
     dir: str
     qty: int = 0
     entry_price: float = 0
+    exit_price: float = 0
     pnl: float
     status: str
 

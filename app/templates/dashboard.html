@@ -1,4 +1,7 @@
 {% block content %}
+<style>
+  .wallet-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+</style>
       <header>
         <h1>StockAI <span class="muted">Cockpit</span></h1>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -22,6 +25,17 @@
             <svg id="eq-svg"><polyline fill="none" stroke="#1e1e2e" stroke-width="1"/></svg>
             <div class="pnl-big" id="eq-pnl">₹100,000</div>
             <div class="pnl-sub" id="eq-pnl-pct">+0.00%</div>
+          </div>
+        </div>
+
+        <!-- Wallet Summary -->
+        <div class="card half" id="wallet-card">
+          <h2>Wallet</h2>
+          <div class="wallet-grid">
+            <div class="stat"><span class="val" id="w-capital">₹100,000</span><span class="lbl">Capital</span></div>
+            <div class="stat"><span class="val" id="w-invested">₹0</span><span class="lbl">Invested</span></div>
+            <div class="stat"><span class="val" id="w-available">₹100,000</span><span class="lbl">Available</span></div>
+            <div class="stat"><span class="val green" id="w-pnl">+₹0</span><span class="lbl">Realized P&L</span></div>
           </div>
         </div>
 
@@ -113,6 +127,17 @@ function drawEquity(){
 // ── Wallet positions ──
 async function pollPositions(){
   try{const r=await fetch('/api/v1/wallet');const d=await r.json();
+    // Wallet summary
+    const cap=d.initial_capital||100000;
+    const inv=d.invested||0;
+    const avail=d.available||cap;
+    const pnl=d.realized_pnl||d.total_pnl||0;
+    $('w-capital').textContent='₹'+cap.toLocaleString('en-IN',{maximumFractionDigits:0});
+    $('w-invested').textContent='₹'+inv.toLocaleString('en-IN',{maximumFractionDigits:0});
+    $('w-available').textContent='₹'+avail.toLocaleString('en-IN',{maximumFractionDigits:0});
+    $('w-pnl').textContent=(pnl>=0?'+':'')+'₹'+Math.abs(pnl).toLocaleString('en-IN',{maximumFractionDigits:0});
+    $('w-pnl').className='val '+(pnl>=0?'green':'red');
+    // Positions
     const keys=Object.keys(d.positions||{});
     if(!keys.length){$('positions-row').innerHTML='<div style="color:var(--muted);font-size:0.65rem">No open positions</div>';return}
     const tickers=Object.keys(mkt);

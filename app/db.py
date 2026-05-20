@@ -143,6 +143,7 @@ async def get_trades(limit: int = 50, ticker: str = "") -> list[dict]:
                 "dir": r["direction"],
                 "qty": r["quantity"],
                 "entry_price": r["entry_price"],
+                "exit_price": r["exit_price"],
                 "pnl": r["pnl_percent"],
                 "status": r["status"],
             }

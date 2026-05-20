@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -102,7 +103,9 @@ class OptimizerAgent:
         }, indent=2)
 
         try:
-            data = self.llm.generate_json(OPTIMIZER_PROMPT, user_prompt, temperature=0.4, max_tokens=1024)
+            data = await asyncio.to_thread(
+                self.llm.generate_json, OPTIMIZER_PROMPT, user_prompt, temperature=0.4, max_tokens=1024
+            )
             logger.info(f"Optimizer: {data.get('analysis', {}).get('main_issue', 'N/A')}")
             return data
         except Exception as e:

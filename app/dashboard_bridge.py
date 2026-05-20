@@ -62,12 +62,17 @@ class ServicesBridge:
 
     async def run(self):
         logger.info("ServicesBridge loop started")
+        last_state = None
         while True:
-            await asyncio.sleep(5)
+            await asyncio.sleep(30)
             if not self.clients:
                 continue
             try:
                 svc = await asyncio.to_thread(_check_services_sync)
+                state_hash = json.dumps(svc, sort_keys=True)
+                if state_hash == last_state:
+                    continue
+                last_state = state_hash
                 payload = json.dumps({"type": "services", "services": svc})
             except Exception as e:
                 logger.error(f"ServicesBridge check: {e}")
@@ -109,12 +114,12 @@ class DashboardDataBridge:
     async def run(self):
         logger.info("DashboardDataBridge loop started")
         last_push = 0.0
+        last_payload = None
         while True:
             await asyncio.sleep(0.2)
             if not self.clients:
                 continue
             now = asyncio.get_event_loop().time()
-            # Push on dirty OR every 5s periodic refresh
             if not self._dirty and (now - last_push) < 5.0:
                 continue
             self._dirty = False
@@ -122,6 +127,9 @@ class DashboardDataBridge:
             try:
                 state = await self._build()
                 payload = json.dumps(state)
+                if payload == last_payload:
+                    continue
+                last_payload = payload
             except Exception as e:
                 logger.error(f"DashboardBridge build: {e}")
                 continue

@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from .config import Settings, get_settings
 from .events import store as event_store
@@ -608,6 +608,7 @@ async def scan_options(request: dict):
 @router.post("/optimize", response_model=dict)
 async def optimize_strategy(
     request: dict,
+    background_tasks: BackgroundTasks,
 ):
     from .optimizer import OptimizerAgent
     from .db import get_trades
@@ -617,33 +618,45 @@ async def optimize_strategy(
     settings = get_settings()
     days = request.get("days", 7)
     trades = await get_trades(limit=500)
-    # Filter last N days
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     recent = [t for t in trades if t.get("time") and t["time"] > cutoff.isoformat()]
 
-    current_params = get_config()
-    agent = OptimizerAgent(settings)
-    result = await agent.analyze_week(recent, current_params)
+    if not recent:
+        return {"trades_analyzed": 0, "period_days": days, "optimization": {"analysis": {"main_issue": "No recent trades"}, "suggestions": [], "confidence": 0}}
 
-    # Store recommendations for approve/reject
-    suggestions = result.get("suggestions", [])
-    if suggestions:
-        _recommendations.clear()
-        for s in suggestions:
-            _recommendations.append({
-                "parameter": s.get("parameter"),
-                "current": s.get("current"),
-                "suggested": s.get("suggested"),
-                "reason": s.get("reason", ""),
-                "status": "pending",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+    current_params = get_config()
+    background_tasks.add_task(_run_optimizer, recent, current_params, days)
 
     return {
         "trades_analyzed": len(recent),
         "period_days": days,
-        "optimization": result,
+        "optimization": {"analysis": {"main_issue": "Optimization running in background..."}, "suggestions": [], "confidence": 0},
     }
+
+
+async def _run_optimizer(recent: list, current_params: dict, days: int):
+    from .optimizer import OptimizerAgent
+    from .config import get_settings
+
+    settings = get_settings()
+    agent = OptimizerAgent(settings)
+    try:
+        result = await agent.analyze_week(recent, current_params)
+        suggestions = result.get("suggestions", [])
+        if suggestions:
+            _recommendations.clear()
+            for s in suggestions:
+                _recommendations.append({
+                    "parameter": s.get("parameter"),
+                    "current": s.get("current"),
+                    "suggested": s.get("suggested"),
+                    "reason": s.get("reason", ""),
+                    "status": "pending",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Background optimizer failed: {e}")
 
 
 # === Recommendations (approve/reject optimizer suggestions) ===

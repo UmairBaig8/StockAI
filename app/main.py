@@ -1,4 +1,5 @@
 import asyncio
+import gzip
 import logging
 import re
 from functools import lru_cache
@@ -6,6 +7,7 @@ from functools import lru_cache
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, Response, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 from contextlib import asynccontextmanager
 import time
@@ -165,6 +167,36 @@ def create_app() -> FastAPI:
                 )
             except Exception:
                 pass
+        return response
+
+    # Gzip compression for text responses
+    class GzipMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            accept = request.headers.get("accept-encoding", "")
+            if "gzip" in accept and response.status_code == 200:
+                content_type = response.headers.get("content-type", "")
+                if any(t in content_type for t in ("text/", "json", "javascript", "css", "svg", "xml")):
+                    body = b""
+                    async for chunk in response.body_iterator:
+                        body += chunk if isinstance(chunk, bytes) else chunk.encode()
+                    if len(body) > 512:
+                        compressed = gzip.compress(body, compresslevel=6)
+                        if len(compressed) < len(body):
+                            return Response(content=compressed, status_code=response.status_code,
+                                headers={**response.headers, "content-encoding": "gzip", "content-length": str(len(compressed)), "vary": "Accept-Encoding"},
+                                media_type=response.headers.get("content-type"))
+            return response
+
+    app.add_middleware(GzipMiddleware)
+
+    # Cache headers for static assets
+    @app.middleware("http")
+    async def cache_middleware(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            response.headers["Vary"] = "Accept-Encoding"
         return response
 
     @app.get("/", response_class=HTMLResponse)

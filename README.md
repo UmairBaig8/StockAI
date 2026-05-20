@@ -1,29 +1,29 @@
-# StockAI — Self-Evolving Algorithmic Trading Agent
+<p align="center">
+  <img src="app/static/img/app-icon.svg" width="120" height="120" alt="StockAI" />
+</p>
 
-> Multi-agent AI trading system for Indian Stock Market (NSE/BSE). Paper trading on AWS. SEBI 2026 compliant.
+<h1 align="center">StockAI</h1>
 
-```
-         ┌──────────────────────────────────────────┐
-         │              ORCHESTRATOR (Go)            │
-         │   Redis pub/sub · Telegram 2FA · Relay    │
-         └──────┬──────────────────────────┬─────────┘
-                │                          │
-     ┌──────────▼──────────┐    ┌─────────▼──────────┐
-     │   ENGINE (Rust)      │    │  MEMORY (Python)   │
-     │   <1ms latency       │    │  DeepSeek LLM      │
-     │   Market feed (WS)   │    │  LanceDB (vectors) │
-     │   2FA gate + rate lim │    │  YFinance (data)   │
-     │   Redis persist pos   │    │  Dashboard + UI    │
-     └──────────────────────┘    └────────────────────┘
-```
+<p align="center">
+  <strong>Self-Evolving Algorithmic Trading Agent</strong>
+</p>
 
-**Status:** Production-ready paper trading · Live on AWS · Auto start/stop scheduled
+<p align="center">
+  Multi-agent AI trading system for Indian Stock Market (NSE/BSE).<br/>
+  Paper trading on AWS · SEBI 2026 compliant · Auto start/stop scheduled
+</p>
 
-[![Rust](https://img.shields.io/badge/Rust-execution-orange)](execution/)
-[![Go](https://img.shields.io/badge/Go-orchestrator-blue)](cmd/)
-[![Python](https://img.shields.io/badge/Python-memory-yellow)](app/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![AWS](https://img.shields.io/badge/AWS-EC2-orange)](aws_deploy/)
+<p align="center">
+  <a href="https://github.com/UmairBaig8/StockAI/blob/main/execution/"><img src="https://img.shields.io/badge/Rust-execution-orange" alt="Rust" /></a>
+  <a href="https://github.com/UmairBaig8/StockAI/blob/main/cmd/"><img src="https://img.shields.io/badge/Go-orchestrator-blue" alt="Go" /></a>
+  <a href="https://github.com/UmairBaig8/StockAI/blob/main/app/"><img src="https://img.shields.io/badge/Python-memory-yellow" alt="Python" /></a>
+  <a href="https://github.com/UmairBaig8/StockAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License" /></a>
+  <a href="https://github.com/UmairBaig8/StockAI/blob/main/aws_deploy/"><img src="https://img.shields.io/badge/AWS-EC2-orange" alt="AWS" /></a>
+</p>
+
+<p align="center">
+  <img src="docs/imgs/app-cokpit.png" alt="StockAI Cockpit Dashboard" width="900" />
+</p>
 
 ## Quick Start
 
@@ -45,6 +45,11 @@ bash aws-update.sh
 
 ## Dashboard
 
+<p align="center">
+  <img src="docs/imgs/cockpit.png" alt="Cockpit" width="280" />
+  <img src="docs/imgs/cockpit-mobile.png" alt="Mobile" width="140" />
+</p>
+
 | Page | URL | Description |
 |------|-----|-------------|
 | **Cockpit** | `/` | Real-time dashboard — equity curve, positions, signals, AI recommendations |
@@ -55,6 +60,11 @@ bash aws-update.sh
 | **Backtest** | `/backtest` | Strategy backtesting engine |
 | **Settings** | `/settings` | All strategy params hot-reloadable |
 | **LLM** | `/llm` | LLM provider health + call traces |
+
+<p align="center">
+  <img src="docs/imgs/report-page.png" alt="Report Page" width="400" />
+  <img src="docs/imgs/history-page.png" alt="History Page" width="400" />
+</p>
 
 ## How It Works
 
@@ -110,6 +120,48 @@ bash aws-update.sh
 | Audit trail | LanceDB `audit_trail` (append-only) + EBS snapshots (30-day retention) |
 | Static IP | AWS Elastic IP for broker whitelisting |
 
+## Architecture
+
+```
+         ┌──────────────────────────────────────────┐
+         │              ORCHESTRATOR (Go)            │
+         │   Redis pub/sub · Telegram 2FA · Relay    │
+         └──────┬──────────────────────────┬─────────┘
+                │                          │
+     ┌──────────▼──────────┐    ┌─────────▼──────────┐
+     │   ENGINE (Rust)      │    │  MEMORY (Python)   │
+     │   <1ms latency       │    │  DeepSeek LLM      │
+     │   Market feed (WS)   │    │  LanceDB (vectors) │
+     │   2FA gate + rate lim │    │  YFinance (data)   │
+     │   Redis persist pos   │    │  Dashboard + UI    │
+     └──────────────────────┘    └──────────────────────┘
+```
+
+| Layer | Language | Role | Key Tech |
+|-------|----------|------|----------|
+| Execution | Rust | Orders, 2FA gate, rate limiter, position tracking | Tokio, Axum, Redis |
+| Orchestration | Go | Redis pub/sub, Telegram 2FA, scheduler | go-redis, net/http |
+| Memory | Python | LLM agents, LanceDB, market data, dashboard | FastAPI, yfinance, LanceDB |
+| Storage | PostgreSQL | Trade history, wallet state, positions | asyncpg |
+| Vectors | LanceDB | Evolution memory + SEBI audit trail | Embedded |
+| Queue | Redis 7 | Trade signals, results, 2FA flag | Docker, Alpine |
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/imgs/research-page.png" alt="Research" width="400" />
+  <img src="docs/imgs/news-page.png" alt="News" width="400" />
+</p>
+
+<p align="center">
+  <img src="docs/imgs/settings-page.png" alt="Settings" width="400" />
+  <img src="docs/imgs/llm-page.png" alt="LLM Traces" width="400" />
+</p>
+
+<p align="center">
+  <img src="docs/imgs/backtest-page.png" alt="Backtest" width="800" />
+</p>
+
 ## AWS Infrastructure
 
 ### Auto Start/Stop Schedule
@@ -137,8 +189,8 @@ bash aws-update.sh
 bash aws_deploy/scripts/status.sh
 
 # Manual start/stop
-aws lambda invoke --function-name stockai-scheduler --payload '{"action":"start"}' /dev/stdout
-aws lambda invoke --function-name stockai-scheduler --payload '{"action":"stop"}' /dev/stdout
+aws lambda invoke --function-name stockai-scheduler --cli-binary-format raw-in-base64-out --payload '{"action":"start"}' /dev/stdout
+aws lambda invoke --function-name stockai-scheduler --cli-binary-format raw-in-base64-out --payload '{"action":"stop"}' /dev/stdout
 
 # View logs
 bash aws_deploy/scripts/logs.sh all
@@ -150,17 +202,6 @@ ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker exec stockai-memory-1 rm
 ```
 
 Full AWS docs: [aws_deploy/README.md](aws_deploy/README.md)
-
-## Architecture
-
-| Layer | Language | Role | Key Tech |
-|-------|----------|------|----------|
-| Execution | Rust | Orders, 2FA gate, rate limiter, position tracking | Tokio, Axum, Redis |
-| Orchestration | Go | Redis pub/sub, Telegram 2FA, scheduler | go-redis, net/http |
-| Memory | Python | LLM agents, LanceDB, market data, dashboard | FastAPI, yfinance, LanceDB |
-| Storage | PostgreSQL | Trade history, wallet state, positions | asyncpg |
-| Vectors | LanceDB | Evolution memory + SEBI audit trail | Embedded |
-| Queue | Redis 7 | Trade signals, results, 2FA flag | Docker, Alpine |
 
 ## Project Structure
 
@@ -271,7 +312,7 @@ This repo includes custom opencode skills for automated development workflows. W
 - Say *"fix engine bug"* → loads `rust-engine` → cargo test → clippy → rebuild
 - Say *"add new agent"* → loads `python-memory` → creates agent file → wires into pipeline
 
-Skills live in `.opencode/skills/` — see individual `SKILL.md` files for commands and patterns.
+Skills live in `.opencode/skills/` — see [SKILLS.md](SKILLS.md) for the full guide.
 
 ## License
 

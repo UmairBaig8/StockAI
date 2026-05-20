@@ -1,0 +1,109 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e3]:
+    - complementary "Main navigation" [ref=e4]:
+      - link "StockAI" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e6]: StockAI
+      - link "Cockpit" [ref=e7] [cursor=pointer]:
+        - /url: /
+      - link "Research" [ref=e8] [cursor=pointer]:
+        - /url: /research
+      - link "News" [ref=e9] [cursor=pointer]:
+        - /url: /news
+      - link "Backtest" [ref=e10] [cursor=pointer]:
+        - /url: /backtest
+      - link "History" [ref=e11] [cursor=pointer]:
+        - /url: /history
+      - link "Report" [ref=e12] [cursor=pointer]:
+        - /url: /report
+      - link "Settings" [ref=e13] [cursor=pointer]:
+        - /url: /settings
+      - link "LLM" [ref=e14] [cursor=pointer]:
+        - /url: /llm
+      - link "2FA Relay" [ref=e15] [cursor=pointer]:
+        - /url: http://3.85.55.232:8080
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - heading "StockAI Cockpit" [level=1] [ref=e19]
+        - generic [ref=e20]:
+          - generic [ref=e21]:
+            - generic [ref=e24]: Mem
+            - generic [ref=e27]: Eng
+            - generic [ref=e30]: Orch
+            - generic [ref=e33]: Rds
+            - generic [ref=e36]: LLM
+          - generic [ref=e37]: IST 00:12:42
+          - generic [ref=e38]: LIVE
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - heading "Equity Curve" [level=2] [ref=e41]
+          - generic [ref=e42]:
+            - img [ref=e43]
+            - generic [ref=e44]: ₹1,00,121
+            - generic [ref=e45]: +0.12%
+        - generic [ref=e46]:
+          - heading "Open Positions" [level=2] [ref=e47]
+          - generic [ref=e118]: No open positions
+        - generic [ref=e50]:
+          - heading "Active Signals" [level=2] [ref=e51]
+          - generic [ref=e54]: Scanning market...
+        - generic [ref=e55]:
+          - heading "Watchlist" [level=2] [ref=e56]
+          - table [ref=e58]:
+            - rowgroup [ref=e59]:
+              - row "Tkr LTP Ch% RSI" [ref=e60]:
+                - columnheader "Tkr" [ref=e61]
+                - columnheader "LTP" [ref=e62]
+                - columnheader "Ch%" [ref=e63]
+                - columnheader "RSI" [ref=e64]
+                - columnheader [ref=e65]
+            - rowgroup [ref=e66]:
+              - row "BEL ₹424.1 +0.05% -- ▲" [ref=e88]:
+                - cell "BEL" [ref=e89]
+                - cell "₹424.1" [ref=e90]
+                - cell "+0.05%" [ref=e91]
+                - cell "--" [ref=e92]
+                - cell "▲" [ref=e93]
+              - row "HAL ₹4333.2 +0.05% -- ▲" [ref=e94]:
+                - cell "HAL" [ref=e95]
+                - cell "₹4333.2" [ref=e96]
+                - cell "+0.05%" [ref=e97]
+                - cell "--" [ref=e98]
+                - cell "▲" [ref=e99]
+              - row "RELIANCE ₹1322.5 +0.05% -- ▲" [ref=e100]:
+                - cell "RELIANCE" [ref=e101]
+                - cell "₹1322.5" [ref=e102]
+                - cell "+0.05%" [ref=e103]
+                - cell "--" [ref=e104]
+                - cell "▲" [ref=e105]
+              - row "SBIN ₹947.1 +0.05% -- ▲" [ref=e106]:
+                - cell "SBIN" [ref=e107]
+                - cell "₹947.1" [ref=e108]
+                - cell "+0.05%" [ref=e109]
+                - cell "--" [ref=e110]
+                - cell "▲" [ref=e111]
+              - row "TATAPOWER ₹414.0 +0.05% -- ▲" [ref=e112]:
+                - cell "TATAPOWER" [ref=e113]
+                - cell "₹414.0" [ref=e114]
+                - cell "+0.05%" [ref=e115]
+                - cell "--" [ref=e116]
+                - cell "▲" [ref=e117]
+        - generic [ref=e69]:
+          - heading "Recent Trades" [level=2] [ref=e70]
+          - table [ref=e72]:
+            - rowgroup [ref=e73]:
+              - row "Time Tkr Dir Qty @ P&L" [ref=e74]:
+                - columnheader "Time" [ref=e75]
+                - columnheader "Tkr" [ref=e76]
+                - columnheader "Dir" [ref=e77]
+                - columnheader "Qty" [ref=e78]
+                - columnheader "@" [ref=e79]
+                - columnheader "P&L" [ref=e80]
+            - rowgroup [ref=e81]:
+              - row "No trades" [ref=e82]:
+                - cell "No trades" [ref=e83]
+        - generic [ref=e84]:
+          - heading "AI Recommendations (run POST /api/v1/optimize to refresh)" [level=2] [ref=e85]
+          - generic [ref=e86]: Optimizer unavailable

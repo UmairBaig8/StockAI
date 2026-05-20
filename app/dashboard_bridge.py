@@ -108,11 +108,17 @@ class DashboardDataBridge:
 
     async def run(self):
         logger.info("DashboardDataBridge loop started")
+        last_push = 0.0
         while True:
             await asyncio.sleep(0.2)
-            if not self._dirty or not self.clients:
+            if not self.clients:
+                continue
+            now = asyncio.get_event_loop().time()
+            # Push on dirty OR every 5s periodic refresh
+            if not self._dirty and (now - last_push) < 5.0:
                 continue
             self._dirty = False
+            last_push = now
             try:
                 state = await self._build()
                 payload = json.dumps(state)

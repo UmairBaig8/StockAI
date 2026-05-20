@@ -369,6 +369,7 @@ func pushTradeToDash(result TradeResult, memoryURL string) {
 		"exit_price":  result.ExitPrice,
 		"pnl":         result.PnLPct,
 		"status":      result.Status,
+		"reason":      result.Reason,
 	}
 	body, _ := json.Marshal(payload)
 	resp, err := http.Post(memoryURL+"/api/v1/dash/trade", "application/json", bytes.NewReader(body))

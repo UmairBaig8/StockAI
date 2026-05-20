@@ -42,6 +42,7 @@ struct TradeResult {
     pnl_percent: f64,
     status: String,
     timestamp: String,
+    reason: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     suspect: bool,
 }
@@ -133,7 +134,7 @@ async fn main() {
     let engine_redis = engine.clone();
     let sig_prices = price_map.clone();
     let signal_handle = tokio::spawn(async move {
-        if let Err(e) = signal_loop(engine_redis, sig_prices, &mut redis_pubsub, &mut redis_pub).await {
+        if let Err(e) = signal_loop(engine_redis, sig_prices, &mut redis_pubsub, &mut redis_pub, config.mock_mode).await {
             error!("Signal loop error: {e}");
         }
     });
@@ -163,6 +164,7 @@ async fn signal_loop(
     _price_map: PriceMap,
     pubsub: &mut PubSub,
     pub_conn: &mut MultiplexedConnection,
+    mock_mode: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     pubsub.subscribe("trade:signal").await?;
     info!("Subscribed to trade:signal");
@@ -237,7 +239,7 @@ async fn signal_loop(
         };
 
         // SEBI: check 2FA is active before allowing execution (skip in paper/mock mode)
-        if !config.mock_mode {
+        if !mock_mode {
             if let Some(ref r2fa) = redis_2fa {
                 if let Ok(mut conn) = r2fa.get_multiplexed_async_connection().await {
                     let active: Option<String> = redis::cmd("GET").arg("2fa:active").query_async(&mut conn).await.ok().flatten();
@@ -299,6 +301,7 @@ async fn signal_loop(
                         pnl_percent: 0.0,
                         status: "OPEN".into(),
                         timestamp: now,
+                        reason: signal.reason.clone(),
                         suspect: false,
                     };
                     let result_json = serde_json::to_string(&result).unwrap();
@@ -349,6 +352,7 @@ async fn signal_loop(
                             pnl_percent: (pnl_pct * 100.0).round() / 100.0,
                             status,
                             timestamp: now,
+                            reason: signal.reason.clone(),
                             suspect,
                         };
                         let result_json = serde_json::to_string(&result).unwrap();

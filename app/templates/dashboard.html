@@ -89,18 +89,17 @@ setInterval(()=>$('clock').textContent='IST '+ts(),1000);
 let eqData = [];
 let mkt = {};
 
-// ── Service health ──
-async function svc(){
-  try{const r=await fetch('/api/v1/services');const d=await r.json();
+// ── Single poll: replaces 3 separate API calls (dash + wallet + services) ──
+async function pollAll(){
+  try{const r=await fetch('/api/v1/dash/all');const all=await r.json();
+    // Services
+    const svc=all.services;
     const map={mem:'memory',eng:'engine',orch:'orchestrator',rdb:'redis',llm:'llm'};
-    Object.entries(map).forEach(([id,key])=>{const ok=d[key]?.online;const el=$('dot-'+id);if(el)el.className='dot '+(ok?'online':'offline')})}catch(e){}
-}
-setInterval(svc,3000);svc();
+    Object.entries(map).forEach(([id,key])=>{const ok=svc[key]?.online;const el=$('dot-'+id);if(el)el.className='dot '+(ok?'online':'offline')});
 
-// ── Equity + Wallet ──
-async function pollEquity(){
-  try{const r=await fetch('/api/v1/dash');const d=await r.json();
-    const pnl=d.summary?.pnl||0;const pnlPct=d.summary?.pnl_percent||0;const inv=d.summary?.invested||0;
+    // Equity + trades
+    const dash=all.dash||all;
+    const pnl=dash.summary?.pnl||0;const pnlPct=dash.summary?.pnl_percent||0;const inv=dash.summary?.invested||0;
     const total=inv+pnl;
     $('eq-pnl').textContent='₹'+total.toLocaleString('en-IN',{maximumFractionDigits:0});
     $('eq-pnl').style.color=pnl>=0?'var(--accent)':'var(--err)';
@@ -108,56 +107,47 @@ async function pollEquity(){
     $('eq-pnl-pct').style.color=pnlPct>=0?'var(--accent)':'var(--err)';
     eqData.push({t:Date.now(),v:total});if(eqData.length>200)eqData.shift();
     drawEquity();
-    // Trades
     const tb=$('trades-body');
-    if(d.trades?.length)tb.innerHTML=d.trades.slice(0,8).map(t=>`<tr><td>${fmtT(t.time)}</td><td>${t.ticker}</td><td>${t.dir.slice(0,1)}</td><td>${t.qty||0}</td><td>${(t.entry_price||0).toFixed(0)}</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">${(t.pnl>0?'+':'')+t.pnl.toFixed(2)}%</td></tr>`).join('');
+    if(dash.trades?.length)tb.innerHTML=dash.trades.slice(0,8).map(t=>`<tr><td>${fmtT(t.time)}</td><td>${t.ticker}</td><td>${t.dir.slice(0,1)}</td><td>${t.qty||0}</td><td>${(t.entry_price||0).toFixed(0)}</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">${(t.pnl>0?'+':'')+t.pnl.toFixed(2)}%</td></tr>`).join('');
 
-    const newsCount = $('news-count');
-    if(newsCount)newsCount.textContent = d.summary?.total_trades || 0;
+    // Signal strip
+    const last=dash.events?.find(e=>e.msg.includes('BUY')||e.msg.includes('SELL')||e.msg.includes('best pick')||e.msg.includes('rotate'));
+    if(last){
+      const isBuy=last.msg.includes('BUY');const isSell=last.msg.includes('SELL');
+      $('signal-strip').innerHTML=`<span class="dot ${isBuy?'buy':isSell?'sell':'idle'}"></span><span id="signal-text">${last.msg}</span>`;
+    }
+
+    // Wallet
+    const wallet=all.wallet;
+    if(wallet){
+      const cap=wallet.initial_capital||100000;
+      const winv=wallet.invested||0;
+      const avail=wallet.available||cap;
+      const wpnl=wallet.realized_pnl||wallet.total_pnl||0;
+      $('w-capital').textContent='₹'+cap.toLocaleString('en-IN',{maximumFractionDigits:0});
+      $('w-invested').textContent='₹'+winv.toLocaleString('en-IN',{maximumFractionDigits:0});
+      $('w-available').textContent='₹'+avail.toLocaleString('en-IN',{maximumFractionDigits:0});
+      $('w-pnl').textContent=(wpnl>=0?'+':'')+'₹'+Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});
+      $('w-pnl').className='val '+(wpnl>=0?'green':'red');
+      const keys=Object.keys(wallet.positions||{});
+      if(!keys.length){$('positions-row').innerHTML='<div style="color:var(--muted);font-size:0.65rem">No open positions</div>'}
+      else{
+        $('positions-row').innerHTML=keys.map(t=>{
+          const p=wallet.positions[t];const m=mkt[t];const cur=m?.last_price||p.avg_price;
+          const pnlPct=((cur-p.avg_price)/p.avg_price*100);const color=pnlPct>=0?'var(--accent)':'var(--err)';
+          return `<div class="pos-card"><span class="tkr">${t}</span><span class="entry">@₹${p.avg_price.toFixed(0)} → ₹${cur.toFixed(0)}</span><span class="pnl" style="color:${color}">${(pnlPct>=0?'+':'')+pnlPct.toFixed(2)}%</span><span class="age">Qty: ${p.qty}</span></div>`;
+        }).join('');
+      }
+    }
   }catch(e){}
 }
+
 function drawEquity(){
   if(eqData.length<2)return;
   const svg=$('eq-svg');const w=svg.clientWidth||400;const h=80;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
   const vals=eqData.map(d=>d.v);const min=Math.min(...vals);const max=Math.max(...vals);const range=max-min||1;
   const pts=eqData.map((d,i)=>`${i/(eqData.length-1)*w},${h-(d.v-min)/range*h}`).join(' ');
   svg.innerHTML=`<polyline fill="none" stroke="${eqData[eqData.length-1].v>=eqData[0].v?'#00ff88':'#ff4444'}" stroke-width="1.5" points="${pts}"/>`;
-}
-
-// ── Wallet positions ──
-async function pollPositions(){
-  try{const r=await fetch('/api/v1/wallet');const d=await r.json();
-    // Wallet summary
-    const cap=d.initial_capital||100000;
-    const inv=d.invested||0;
-    const avail=d.available||cap;
-    const pnl=d.realized_pnl||d.total_pnl||0;
-    $('w-capital').textContent='₹'+cap.toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-invested').textContent='₹'+inv.toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-available').textContent='₹'+avail.toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-pnl').textContent=(pnl>=0?'+':'')+'₹'+Math.abs(pnl).toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-pnl').className='val '+(pnl>=0?'green':'red');
-    // Positions
-    const keys=Object.keys(d.positions||{});
-    if(!keys.length){$('positions-row').innerHTML='<div style="color:var(--muted);font-size:0.65rem">No open positions</div>';return}
-    const tickers=Object.keys(mkt);
-    $('positions-row').innerHTML=keys.map(t=>{
-      const p=d.positions[t];const m=mkt[t];const cur=m?.last_price||p.avg_price;
-      const pnlPct=((cur-p.avg_price)/p.avg_price*100);const color=pnlPct>=0?'var(--accent)':'var(--err)';
-      return `<div class="pos-card"><span class="tkr">${t}</span><span class="entry">@₹${p.avg_price.toFixed(0)} → ₹${cur.toFixed(0)}</span><span class="pnl" style="color:${color}">${(pnlPct>=0?'+':'')+pnlPct.toFixed(2)}%</span><span class="age">Qty: ${p.qty}</span></div>`;
-    }).join('');
-  }catch(e){}
-}
-
-// ── Signal strip ──
-async function pollSignals(){
-  try{const r=await fetch('/api/v1/dash');const d=await r.json();
-    const last=d.events?.find(e=>e.msg.includes('BUY')||e.msg.includes('SELL')||e.msg.includes('best pick')||e.msg.includes('rotate'));
-    if(last){
-      const isBuy=last.msg.includes('BUY');const isSell=last.msg.includes('SELL');
-      $('signal-strip').innerHTML=`<span class="dot ${isBuy?'buy':isSell?'sell':'idle'}"></span><span id="signal-text">${last.msg}</span>`;
-    }
-  }catch(e){}
 }
 
 // ── Market watch ──
@@ -208,8 +198,7 @@ async function approveAll(){
 }
 function rejectAll(){recs.forEach(r=>{if(r.status==='pending')r.status='rejected'});renderRecs()}
 
-// ── Poll cycle ──
-setInterval(pollEquity,3000);pollEquity();
-setInterval(pollSignals,5000);pollSignals();
+// ── Poll cycle (single endpoint replaces 3 separate calls) ──
+setInterval(pollAll,2000);pollAll();
 setInterval(pollOptimizer,3600000);pollOptimizer(); // hourly
 </script>

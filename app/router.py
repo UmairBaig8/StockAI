@@ -184,6 +184,54 @@ async def dash(store: VectorStore = Depends(get_store), settings: Settings = Dep
     )
 
 
+@router.get("/dash/all", response_model=dict)
+async def dash_all(store: VectorStore = Depends(get_store), settings: Settings = Depends(get_settings)):
+    """Single endpoint returning dash + wallet + services — 1 round-trip instead of 3."""
+    # Dash data (same as /dash)
+    snap = event_store.snapshot()
+    trades = snap["trades"]
+    total_invested = sum(t.entry_price * t.qty for t in trades)
+    total_pnl_amount = sum(t.entry_price * t.qty * t.pnl / 100 for t in trades)
+
+    # Wallet
+    snap_w = wallet_instance.snapshot()
+
+    # Merge with DB if in-memory is empty
+    total = len(trades)
+    wins = sum(1 for t in trades if t.pnl > 0)
+    losses = sum(1 for t in trades if t.pnl <= 0)
+    if total == 0:
+        try:
+            db_summary = await get_summary()
+            total = db_summary.get("total_trades", 0)
+            wins = db_summary.get("wins", 0)
+            losses = db_summary.get("losses", 0)
+            total_invested = snap_w.get("initial_capital", 100000)
+            total_pnl_amount = snap_w.get("total_pnl", 0)
+        except Exception:
+            pass
+
+    return {
+        "dash": {
+            "trades": [t.model_dump() for t in list(trades)[:10]],
+            "summary": {
+                "invested": total_invested,
+                "pnl": total_pnl_amount,
+                "pnl_percent": (total_pnl_amount / total_invested * 100) if total_invested > 0 else 0,
+                "total_trades": total,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": (wins / total * 100) if total > 0 else 0,
+            },
+            "last_postmortem": snap["last_postmortem"],
+            "events": [e.model_dump() for e in snap["events"][:5]],
+            "provider": settings.llm_provider.value,
+        },
+        "wallet": snap_w,
+        "services": await services_status(settings=settings),
+    }
+
+
 @router.get("/services", response_model=dict)
 async def services_status(settings: Settings = Depends(get_settings)):
     import socket, os

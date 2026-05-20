@@ -33,7 +33,23 @@ class StrategyAgent:
         self._loss_cooldown_until = 0.0
         self._daily_loss = 0.0
         self._daily_loss_date = ""
+        self._http: httpx.AsyncClient | None = None
+        self._redis = None
         settings_store.on_change(self._on_settings_change)
+
+    def _get_http(self) -> httpx.AsyncClient:
+        if self._http is None or self._http.is_closed:
+            self._http = httpx.AsyncClient(
+                timeout=httpx.Timeout(15.0, connect=5.0),
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
+        return self._http
+
+    async def _get_redis(self):
+        if self._redis is None:
+            import redis.asyncio as redis
+            self._redis = redis.Redis.from_url(self.redis_url)
+        return self._redis
 
     def _load_config(self, cfg: dict | None = None):
         if cfg is None:
@@ -202,22 +218,10 @@ class StrategyAgent:
                     else:
                         continue
 
-                # Pre-trade checks
+                # Pre-trade checks — all 5 guards run in parallel
                 if signal["direction"] == "BUY":
-                    if not await self._check_advocate(ticker, signal["direction"], qty, current, signal["reason"]):
-                        logger.info(f"Strategy: {ticker} BUY BLOCKED by advocate")
-                        continue
-                    if await self._check_memory(ticker, rsi):
-                        logger.info(f"Strategy: {ticker} BUY BLOCKED by memory (similar past failure)")
-                        continue
-                    if await self._check_researcher(ticker):
-                        logger.info(f"Strategy: {ticker} BUY BLOCKED by researcher (AVOID/Bearish)")
-                        continue
-                    if await self._check_sentiment(ticker):
-                        logger.info(f"Strategy: {ticker} BUY BLOCKED by sentiment (extreme fear)")
-                        continue
-                    if await self._check_macro():
-                        logger.info(f"Strategy: {ticker} BUY BLOCKED by macro (high risk)")
+                    check = await self._run_pre_trade_checks(ticker, signal["direction"], qty, current, signal["reason"], rsi)
+                    if check["blocked"]:
                         continue
 
                 trade = {
@@ -255,16 +259,49 @@ class StrategyAgent:
             self._last_discovery_date = today
             logger.info(f"Auto-discovery triggered at {now.strftime('%H:%M')} IST")
             try:
-                async with httpx.AsyncClient(timeout=30) as c:
-                    r = await c.post(
-                        f"{self.memory_url}/api/v1/tickers/discover",
-                        json={"count": 8},
-                    )
-                    if r.status_code == 200:
-                        data = r.json()
-                        logger.info(f"Discovered {data.get('added', 0)} new tickers")
+                r = await self._get_http().post(
+                    f"{self.memory_url}/api/v1/tickers/discover",
+                    json={"count": 8},
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    logger.info(f"Discovered {data.get('added', 0)} new tickers")
             except Exception as e:
                 logger.warning(f"Auto-discovery failed: {e}")
+
+    async def _run_pre_trade_checks(self, ticker: str, direction: str, qty: int, price: float, reason: str, rsi: float) -> dict[str, bool | str]:
+        """Run all 5 pre-trade guards in parallel. Returns {'blocked': True/False, 'by': 'agent_name'}."""
+        results = await asyncio.gather(
+            self._check_advocate(ticker, direction, qty, price, reason),
+            self._check_memory(ticker, rsi),
+            self._check_researcher(ticker),
+            self._check_sentiment(ticker),
+            self._check_macro(),
+            return_exceptions=True,
+        )
+
+        guards = ["advocate", "memory", "researcher", "sentiment", "macro"]
+        for i, result in enumerate(results):
+            if isinstance(result, BaseException):
+                logger.warning(f"Pre-trade check {guards[i]} failed for {ticker}: {result}")
+                if guards[i] in ("advocate", "researcher", "macro"):
+                    return {"blocked": True, "by": guards[i]}
+                continue
+            if guards[i] == "advocate" and not result:
+                logger.info(f"Strategy: {ticker} BUY BLOCKED by advocate")
+                return {"blocked": True, "by": "advocate"}
+            if guards[i] != "advocate" and result:
+                block_name = guards[i]
+                if block_name == "memory":
+                    logger.info(f"Strategy: {ticker} BUY BLOCKED by memory (similar past failure)")
+                elif block_name == "researcher":
+                    logger.info(f"Strategy: {ticker} BUY BLOCKED by researcher (AVOID/Bearish)")
+                elif block_name == "sentiment":
+                    logger.info(f"Strategy: {ticker} BUY BLOCKED by sentiment (extreme fear)")
+                elif block_name == "macro":
+                    logger.info(f"Strategy: {ticker} BUY BLOCKED by macro (high risk)")
+                return {"blocked": True, "by": block_name}
+        return {"blocked": False, "by": ""}
 
     async def _pick_best_trade(self, open_count: int):
         """Pick the highest-scoring opportunity across all tickers."""
@@ -284,21 +321,9 @@ class StrategyAgent:
                     best_price = prices[-1]
 
             if best_ticker and best_price > 0 and best_score > -500:
-                # Pre-trade safety checks for forced/rotation BUY (same as natural signals)
-                if not await self._check_advocate(best_ticker, "BUY", 0, best_price, "forced-best-pick"):
-                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by advocate")
-                    return
-                if await self._check_memory(best_ticker, self._calc_rsi(list(self.price_history[best_ticker]))):
-                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by memory")
-                    return
-                if await self._check_researcher(best_ticker):
-                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by researcher")
-                    return
-                if await self._check_sentiment(best_ticker):
-                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by sentiment")
-                    return
-                if await self._check_macro():
-                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by macro")
+                # Pre-trade safety checks — all 5 guards run in parallel
+                check = await self._run_pre_trade_checks(best_ticker, "BUY", 0, best_price, "forced-best-pick", self._calc_rsi(list(self.price_history[best_ticker])))
+                if check["blocked"]:
                     return
 
                 notional = wallet_instance.available * (self.max_position_pct / 100)
@@ -605,20 +630,19 @@ class StrategyAgent:
 
     async def _check_advocate(self, ticker: str, direction: str, qty: int, price: float, reason: str) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=30) as c:
-                r = await c.post(
-                    f"{self.memory_url}/api/v1/advocate",
-                    json={
-                        "ticker": ticker,
-                        "direction": direction,
-                        "quantity": qty,
-                        "price": price,
-                        "reason": reason,
-                        "market_state": {"rsi": self._calc_rsi(list(self.price_history.get(ticker, [])))},
-                    },
-                )
-                data = r.json()
-                return data.get("verdict") != "BLOCK"
+            r = await self._get_http().post(
+                f"{self.memory_url}/api/v1/advocate",
+                json={
+                    "ticker": ticker,
+                    "direction": direction,
+                    "quantity": qty,
+                    "price": price,
+                    "reason": reason,
+                    "market_state": {"rsi": self._calc_rsi(list(self.price_history.get(ticker, [])))},
+                },
+            )
+            data = r.json()
+            return data.get("verdict") != "BLOCK"
         except Exception as e:
             logger.warning(f"Advocate check failed for {ticker}: {e}")
             return False  # BLOCK if advocate unavailable (safe default)
@@ -629,98 +653,89 @@ class StrategyAgent:
             n = len(prices)
             price_velocity = ((prices[-1] - prices[-min(5, n)]) / prices[-min(5, n)] * 100) if n >= 5 else 0
             trend_profile = ((prices[-1] - prices[0]) / prices[0] * 100) if n >= 2 else 0
-            async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.post(
-                    f"{self.memory_url}/api/v1/pretrade",
-                    json={
-                        "ticker": ticker,
-                        "market_state": {
-                            "rsi": rsi,
-                            "macd_histogram": 0,
-                            "volume_z_score": 0,
-                            "sector_trend": 0,
-                            "price_velocity_5m": round(price_velocity, 2),
-                            "trend_profile_1h": round(trend_profile, 2),
-                        },
+            r = await self._get_http().post(
+                f"{self.memory_url}/api/v1/pretrade",
+                json={
+                    "ticker": ticker,
+                    "market_state": {
+                        "rsi": rsi,
+                        "macd_histogram": 0,
+                        "volume_z_score": 0,
+                        "sector_trend": 0,
+                        "price_velocity_5m": round(price_velocity, 2),
+                        "trend_profile_1h": round(trend_profile, 2),
                     },
-                )
-                data = r.json()
-                return data.get("matched", False)
+                },
+            )
+            data = r.json()
+            return data.get("matched", False)
         except Exception:
             return False
 
     async def _check_researcher(self, ticker: str) -> bool:
-        """Check Researcher agent — BLOCK if AVOID recommendation or Bearish with low confidence."""
         try:
-            async with httpx.AsyncClient(timeout=15) as c:
-                r = await c.post(
-                    f"{self.memory_url}/api/v1/research",
-                    json={"ticker": ticker, "sector": "General", "exchange": "NSE"},
-                )
-                if r.status_code != 200:
-                    return False
-                data = r.json()
-                rec = data.get("trade_recommendation", "").upper()
-                sentiment = data.get("sentiment", {}).get("value", "") if isinstance(data.get("sentiment"), dict) else data.get("sentiment", "")
-                confidence = float(data.get("confidence", 0.5))
-                if rec == "AVOID" or (str(sentiment).upper() == "BEARISH" and confidence > 0.6):
-                    logger.info(f"Researcher: {ticker} → {rec} sentiment={sentiment} conf={confidence:.0%}")
-                    return True  # BLOCK
-                return False
+            r = await self._get_http().post(
+                f"{self.memory_url}/api/v1/research",
+                json={"ticker": ticker, "sector": "General", "exchange": "NSE"},
+            )
+            if r.status_code != 200:
+                return True  # BLOCK if researcher returns error (safe default)
+            data = r.json()
+            rec = data.get("trade_recommendation", "").upper()
+            sentiment = data.get("sentiment", {}).get("value", "") if isinstance(data.get("sentiment"), dict) else data.get("sentiment", "")
+            confidence = float(data.get("confidence", 0.5))
+            if rec == "AVOID" or (str(sentiment).upper() == "BEARISH" and confidence > 0.6):
+                logger.info(f"Researcher: {ticker} → {rec} sentiment={sentiment} conf={confidence:.0%}")
+                return True  # BLOCK
+            return False
         except Exception as e:
             logger.debug(f"Researcher check skipped for {ticker}: {e}")
             return True  # BLOCK if researcher unavailable (safe default)
 
     async def _check_sentiment(self, ticker: str) -> bool:
-        """Check Sentiment agent — BLOCK if Fear & Greed Index < 30 (extreme fear)."""
         try:
-            async with httpx.AsyncClient(timeout=15) as c:
-                r = await c.post(
-                    f"{self.memory_url}/api/v1/sentiment",
-                    json={"ticker": ticker, "sector": "General"},
-                )
-                if r.status_code != 200:
-                    return False
-                data = r.json()
-                fgi = float(data.get("fgi", 50))
-                if fgi < 30:
-                    logger.info(f"Sentiment: {ticker} FGI={fgi:.0f} (extreme fear) — blocking")
-                    return True  # BLOCK
+            r = await self._get_http().post(
+                f"{self.memory_url}/api/v1/sentiment",
+                json={"ticker": ticker, "sector": "General"},
+            )
+            if r.status_code != 200:
                 return False
+            data = r.json()
+            fgi = float(data.get("fear_greed_index", data.get("fgi", 50)))
+            if fgi < 30:
+                logger.info(f"Sentiment: {ticker} FGI={fgi:.0f} (extreme fear) — blocking")
+                return True  # BLOCK
+            return False
         except Exception as e:
             logger.debug(f"Sentiment check skipped for {ticker}: {e}")
             return False
 
     async def _check_macro(self) -> bool:
-        """Check Macro analyst — BLOCK if overall market risk is HIGH."""
         try:
-            async with httpx.AsyncClient(timeout=15) as c:
-                r = await c.post(
-                    f"{self.memory_url}/api/v1/macro",
-                    json={"context": "pre-trade check before NSE equity buy"},
-                )
-                if r.status_code != 200:
-                    return False
-                data = r.json()
-                risk = str(data.get("risk_level", data.get("risk", ""))).upper()
-                outlook = str(data.get("outlook", "")).upper()
-                if risk == "HIGH" or outlook == "BEARISH":
-                    logger.info(f"Macro: risk={risk} outlook={outlook} — blocking trades")
-                    return True  # BLOCK
+            r = await self._get_http().post(
+                f"{self.memory_url}/api/v1/macro",
+                json={"context": "pre-trade check before NSE equity buy"},
+            )
+            if r.status_code != 200:
                 return False
+            data = r.json()
+            risk = str(data.get("risk_level", data.get("risk", ""))).upper()
+            outlook = str(data.get("outlook", "")).upper()
+            if risk == "HIGH" or outlook == "BEARISH":
+                logger.info(f"Macro: risk={risk} outlook={outlook} — blocking trades")
+                return True  # BLOCK
+            return False
         except Exception as e:
             logger.debug(f"Macro check skipped: {e}")
             return True  # BLOCK if macro unavailable (safe default)
 
     async def _publish_trade(self, trade: dict):
         try:
-            import redis.asyncio as redis
             t = trade.copy()
             import datetime
             t["timestamp"] = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).isoformat()
-            r = redis.Redis.from_url(self.redis_url)
+            r = await self._get_redis()
             await r.publish("trade:signal", json.dumps(t))
-            await r.aclose()
         except Exception as e:
             logger.error(f"Failed to publish trade: {e}")
 

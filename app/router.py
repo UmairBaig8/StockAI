@@ -185,59 +185,40 @@ async def dash(store: VectorStore = Depends(get_store), settings: Settings = Dep
 
 @router.get("/services", response_model=dict)
 async def services_status(settings: Settings = Depends(get_settings)):
-    status = {
+    import socket, os
+
+    def _check_port(host: str, port: int) -> bool:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            result = s.connect_ex((host, port)) == 0
+            s.close()
+            return result
+        except Exception:
+            return False
+
+    async def _check_service(name: str, port: int) -> bool:
+        hosts = [name, "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
+        for host in hosts:
+            online = await asyncio.to_thread(_check_port, host, port)
+            if online:
+                return True
+        return False
+
+    redis_ok, engine_ok, orchestrator_ok = await asyncio.gather(
+        _check_service("redis", 6379),
+        _check_service("engine", 9001),
+        _check_service("orchestrator", 8080),
+        return_exceptions=True,
+    )
+
+    return {
         "memory": {"online": True, "port": 8000},
-        "redis": {"online": False, "port": 6379},
-        "engine": {"online": False, "port": 9001},
-        "orchestrator": {"online": False, "port": 8080},
+        "redis": {"online": bool(redis_ok), "port": 6379},
+        "engine": {"online": bool(engine_ok), "port": 9001},
+        "orchestrator": {"online": bool(orchestrator_ok), "port": 8080},
         "llm": {"online": True, "provider": settings.llm_provider.value},
     }
-    try:
-        import socket, os
-        hosts = ["redis", "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
-        for host in hosts:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(1)
-                if s.connect_ex((host, 6379)) == 0:
-                    status["redis"]["online"] = True
-                    break
-                s.close()
-            except Exception:
-                pass
-    except Exception:
-        pass
-    try:
-        import socket, os
-        hosts = ["engine", "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
-        for host in hosts:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(1)
-                if s.connect_ex((host, 9001)) == 0:
-                    status["engine"]["online"] = True
-                    break
-                s.close()
-            except Exception:
-                pass
-    except Exception:
-        pass
-    try:
-        import socket, os
-        hosts = ["orchestrator", "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
-        for host in hosts:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(1)
-                if s.connect_ex((host, 8080)) == 0:
-                    status["orchestrator"]["online"] = True
-                    break
-                s.close()
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return status
 
 
 @router.get("/quote/{ticker}", response_model=dict)
@@ -661,3 +642,85 @@ async def approve_all_recommendations():
         settings_store.save(cfg)
         logger.info(f"Applied {applied} recommendations")
     return {"ok": True, "applied": applied}
+
+
+# === Strategy Debug Status ===
+
+@router.get("/strategy/status", response_model=dict)
+async def strategy_status():
+    """Debug endpoint: shows why signals are/aren't firing, guard states, and trading conditions."""
+    from .main import strategy as strat
+    from .wallet import wallet as w
+    import time
+
+    ist = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+    market_open = strat._is_market_open()
+    loop_now = asyncio.get_event_loop().time()
+
+    # Per-ticker signal readiness
+    ticker_status = {}
+    for ticker, prices in strat.price_history.items():
+        n = len(prices)
+        current = prices[-1] if n > 0 else 0
+        rsi = strat._calc_rsi(list(prices)) if n >= 2 else 50
+        last_sig = strat.last_signal.get(ticker, 0)
+        cooldown_remaining = max(0, strat.signal_cooldown - (loop_now - last_sig)) if last_sig > 0 else 0
+
+        in_position = ticker in w.positions
+        pos_pnl = 0.0
+        if in_position:
+            pos = w.positions[ticker]
+            pos_pnl = ((current - pos.avg_price) / pos.avg_price * 100) if pos.avg_price > 0 else 0
+
+        ticker_status[ticker] = {
+            "data_points": n,
+            "min_required": strat.rsi_period,
+            "ready": n >= strat.rsi_period,
+            "last_price": round(current, 2),
+            "rsi": round(rsi, 1),
+            "rsi_oversold_threshold": strat.rsi_oversold,
+            "rsi_overbought_threshold": strat.rsi_overbought,
+            "in_position": in_position,
+            "position_pnl_pct": round(pos_pnl, 2),
+            "last_signal_sec_ago": round(loop_now - last_sig, 1) if last_sig > 0 else None,
+            "cooldown_remaining_sec": round(cooldown_remaining, 1),
+        }
+
+    wallet = w.snapshot()
+
+    return {
+        "timestamp": ist.isoformat(),
+        "market": {
+            "is_open": market_open,
+            "day": ist.strftime("%A"),
+            "hour": ist.hour,
+            "minute": ist.minute,
+        },
+        "wallet": {
+            "equity": round(wallet["total_equity"], 2),
+            "available": round(wallet["available"], 2),
+            "invested": round(wallet["invested"], 2),
+            "pnl": round(wallet["total_pnl"], 2),
+            "pnl_pct": round(wallet["total_pnl_pct"], 2),
+            "positions_open": len(wallet.get("positions", {})),
+            "max_positions": strat.max_positions,
+        },
+        "risk_gates": {
+            "consecutive_losses": strat._consecutive_losses,
+            "loss_cooldown_active": strat._loss_cooldown_until > 0,
+            "loss_cooldown_remaining_sec": round(max(0, strat._loss_cooldown_until - loop_now), 1) if strat._loss_cooldown_until > 0 else 0,
+            "daily_loss_pct": round(strat._daily_loss, 2),
+            "daily_loss_limit_pct": strat.daily_loss_limit_pct,
+        },
+        "tickers": ticker_status,
+        "signal_config": {
+            "rsi_oversold": strat.rsi_oversold,
+            "rsi_overbought": strat.rsi_overbought,
+            "min_drop_pct": strat.min_drop_pct,
+            "signal_cooldown_sec": strat.signal_cooldown,
+            "force_trade_sec": strat.force_trade_sec,
+            "short_enabled": strat.short_enabled,
+            "take_profit_pct": strat.take_profit_pct,
+            "stop_loss_pct": strat.stop_loss_pct,
+        },
+    }

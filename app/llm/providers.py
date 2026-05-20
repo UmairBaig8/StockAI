@@ -16,7 +16,8 @@ _trace_buffer: deque[dict] = deque(maxlen=200)
 
 
 def _record_trace(agent: str, provider: str, model: str, prompt_chars: int,
-                  response_chars: int, latency_ms: float, success: bool, error: str = ""):
+                   response_chars: int, latency_ms: float, success: bool, error: str = "",
+                   prompt_text: str = "", response_text: str = ""):
     _trace_buffer.append({
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "agent": agent,
@@ -27,6 +28,8 @@ def _record_trace(agent: str, provider: str, model: str, prompt_chars: int,
         "latency_ms": round(latency_ms, 1),
         "success": success,
         "error": error[:200] if error else "",
+        "prompt": prompt_text[:1000] if prompt_text else "",
+        "response": response_text[:2000] if response_text else "",
     })
 
 
@@ -120,14 +123,16 @@ class LLMAdapter(ABC):
         import re
 
         prompt_chars = len(system_prompt) + len(user_prompt)
+        prompt_full = f"[SYSTEM]\n{system_prompt[:800]}\n\n[USER]\n{user_prompt[:800]}"
         last_error = ""
 
         for attempt in range(max_retries + 1):
             t0 = time.monotonic()
             try:
+                full_user = user_prompt + ("\n\nRespond with valid JSON only. No markdown, no explanation." if attempt == 0 else "")
                 text = self.generate(
                     system_prompt,
-                    user_prompt + ("\n\nRespond with valid JSON only. No markdown, no explanation." if attempt == 0 else ""),
+                    full_user,
                     temperature=max(0.1, temperature - 0.1 * attempt),
                     max_tokens=max_tokens,
                 )
@@ -137,6 +142,7 @@ class LLMAdapter(ABC):
                     last_error = "empty response from LLM"
                     continue
 
+                raw_text = text
                 text = self._strip_reasoning(text)
                 text = self._strip_code_fences(text).strip()
 
@@ -159,7 +165,8 @@ class LLMAdapter(ABC):
                         continue
 
                 _record_trace(self.agent_name, self.provider.value, self.model,
-                             prompt_chars, len(text), elapsed, True)
+                             prompt_chars, len(text), elapsed, True,
+                             prompt_text=prompt_full, response_text=raw_text[:2000])
                 return result
 
             except Exception as e:
@@ -168,7 +175,8 @@ class LLMAdapter(ABC):
 
         elapsed = (time.monotonic() - t0) * 1000 if 't0' in dir() else 0
         _record_trace(self.agent_name, self.provider.value, self.model,
-                     prompt_chars, 0, elapsed, False, last_error)
+                     prompt_chars, 0, elapsed, False, last_error,
+                     prompt_text=prompt_full, response_text="")
         raise ValueError(f"LLM failed after {max_retries + 1} attempts: {last_error}")
 
 

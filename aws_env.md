@@ -5,9 +5,9 @@
 | Field | Value |
 |-------|-------|
 | **Instance ID** | `i-058cc54d6a71a3064` |
-| **Public IP** | `3.85.55.232` |
+| **Public IP** | `52.91.29.172` |
 | **Region** | `us-east-1` (N. Virginia) |
-| **Type** | `t2.small` (1 vCPU, 2 GB RAM) |
+| **Type** | `t3.medium` (2 vCPU, 4 GB RAM) |
 | **AMI** | Amazon Linux 2023 |
 | **Key Pair** | `stockai-key.pem` (in repo root) |
 | **Security Group** | `sg-06ad9c996866ee2b5` (ports 22, 8000, 8080) |
@@ -27,43 +27,43 @@
 
 | URL | Description |
 |-----|-------------|
-| `http://3.85.55.232:8000` | Dashboard (real-time) |
-| `http://3.85.55.232:8000/api/v1/wallet` | Wallet status (JSON) |
-| `http://3.85.55.232:8000/api/v1/dash` | Trade history + summary |
-| `http://3.85.55.232:8000/api/v1/health` | Health check (+ LanceDB entries) |
-| `http://3.85.55.232:8000/api/v1/services` | All service statuses |
-| `http://3.85.55.232:8000/api/v1/quote/{TICKER}` | Live market quote |
-| `http://3.85.55.232:8000/ws/market` | WebSocket market feed |
-| `http://3.85.55.232:8080` | TOTP 2FA relay |
+| `http://52.91.29.172:8000` | Dashboard (real-time) |
+| `http://52.91.29.172:8000/api/v1/wallet` | Wallet status (JSON) |
+| `http://52.91.29.172:8000/api/v1/dash` | Trade history + summary |
+| `http://52.91.29.172:8000/api/v1/health` | Health check (+ LanceDB entries) |
+| `http://52.91.29.172:8000/api/v1/services` | All service statuses |
+| `http://52.91.29.172:8000/api/v1/quote/{TICKER}` | Live market quote |
+| `http://52.91.29.172:8000/ws/market` | WebSocket market feed |
+| `http://52.91.29.172:8080` | TOTP 2FA relay |
 
 ## SSH Access
 
 ```bash
-ssh -i stockai-key.pem ec2-user@3.85.55.232
+ssh -i stockai-key.pem ec2-user@52.91.29.172
 ```
 
 ## Useful Commands
 
 ### Check service status
 ```bash
-ssh -i stockai-key.pem ec2-user@3.85.55.232 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
 ```
 
 ### View logs
 ```bash
 # Memory/Strategy logs
-ssh -i stockai-key.pem ec2-user@3.85.55.232 'sudo docker logs stockai-memory-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker logs stockai-memory-1 --tail 50'
 
 # Engine logs
-ssh -i stockai-key.pem ec2-user@3.85.55.232 'sudo docker logs stockai-engine-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker logs stockai-engine-1 --tail 50'
 
 # Orchestrator logs
-ssh -i stockai-key.pem ec2-user@3.85.55.232 'sudo docker logs stockai-orchestrator-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker logs stockai-orchestrator-1 --tail 50'
 ```
 
 ### Redeploy after code push
 ```bash
-ssh -i stockai-key.pem ec2-user@3.85.55.232 'sudo bash -c "
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
 cd /root/stockai && git pull origin main
 docker compose build
 docker compose up -d --force-recreate
@@ -73,13 +73,13 @@ docker compose up -d --force-recreate
 ### Rebuild single service
 ```bash
 # Memory only (Python, fast rebuild)
-ssh -i stockai-key.pem ec2-user@3.85.55.232 'sudo bash -c "
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
 cd /root/stockai && git pull origin main
 docker compose build memory && docker compose up -d memory
 "'
 
 # Engine only (Rust binary is pre-built, fast)
-ssh -i stockai-key.pem ec2-user@3.85.55.232 'sudo bash -c "
+ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
 cd /root/stockai && git pull origin main
 docker compose build engine && docker compose up -d engine
 "'

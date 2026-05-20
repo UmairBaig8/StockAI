@@ -80,7 +80,7 @@ def render_page(template_name: str, title: str, active: str) -> str:
     <aside class="sidebar" aria-label="Main navigation">
       <a class="brand" href="/">{_ICON_SVG}<span>StockAI</span></a>
       {nav}
-      <a href="http://3.85.55.232:8080" rel="noopener">2FA Relay</a>
+      <a href="http://52.91.29.172:8080" rel="noopener">2FA Relay</a>
     </aside>
     <div class="page-shell">
       <nav class="mobile-nav" aria-label="Mobile navigation">{nav}</nav>

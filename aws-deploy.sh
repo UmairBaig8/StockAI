@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
-# StockAI AWS EC2 — one command: creates t3.medium, deploys, prints dashboard URL
+# StockAI AWS EC2 — FRESH DEPLOY: creates new t3.medium, builds & starts all services
 # Usage: bash aws-deploy.sh
-# Uses .env from repo root (all keys copied to instance)
+# Prerequisites: aws cli authenticated, .env in repo root, execution/execution-bin exists
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 
@@ -11,9 +11,13 @@ if ! aws sts get-caller-identity &>/dev/null; then
   exit 1
 fi
 
-# Check .env exists
 if [ ! -f ".env" ]; then
   echo -e "${RED}.env not found in repo root${NC}"
+  exit 1
+fi
+
+if [ ! -f "execution/execution-bin" ]; then
+  echo -e "${RED}execution/execution-bin not found — build locally first${NC}"
   exit 1
 fi
 
@@ -53,7 +57,7 @@ curl -sSL https://raw.githubusercontent.com/UmairBaig8/StockAI/main/install.sh |
 EOF
 )
 
-# ── 4. Launch EC2 with larger EBS ──
+# ── 4. Launch EC2 ──
 echo -e "${CYAN}>>> Launching $INSTANCE_TYPE with ${EBS_SIZE}GB EBS...${NC}"
 AMI_ID=$(aws ec2 describe-images --owners amazon \
   --filters "Name=name,Values=al2023-ami-2023*-x86_64" \
@@ -89,25 +93,24 @@ for i in $(seq 1 60); do
   sleep 5
 done
 
-# ── 7. Copy .env + execution-bin ──
-echo -e "\n${CYAN}>>> Copying .env + execution-bin to instance...${NC}"
+# ── 7. Copy .env + execution-bin, install compose v2 ──
+echo -e "\n${CYAN}>>> Copying .env + execution-bin...${NC}"
 scp -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no .env ec2-user@"$PUBLIC_IP":/tmp/stockai-env
 scp -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no execution/execution-bin ec2-user@"$PUBLIC_IP":/tmp/execution-bin
 ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'sudo bash -c "
 cp /tmp/stockai-env /root/stockai/.env && chmod 600 /root/stockai/.env
 cp /tmp/execution-bin /root/stockai/execution/execution-bin && chmod +x /root/stockai/execution/execution-bin
-# Install docker compose v2 plugin (Amazon Linux 2023 only has v1)
 mkdir -p /usr/local/lib/docker/cli-plugins
 curl -sL https://github.com/docker/compose/releases/download/v2.40.2/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 "'
-echo -e "${GREEN}  .env + execution-bin copied, compose v2 installed${NC}"
+echo -e "${GREEN}  Done${NC}"
 
-# ── 8. Rebuild with full .env ──
-echo -e "\n${CYAN}>>> Rebuilding with full .env...${NC}"
+# ── 8. Build & start ──
+echo -e "\n${CYAN}>>> Building & starting services...${NC}"
 ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'sudo bash -c "
 cd /root/stockai
-docker compose down
+docker compose down 2>/dev/null || true
 docker compose build
 docker compose up -d
 "'
@@ -135,13 +138,14 @@ echo -e "${GREEN}╠════════════════════
 echo -e "${GREEN}║  Dashboard:  http://${PUBLIC_IP}:8000${NC}"
 echo -e "${GREEN}║  Wallet:     http://${PUBLIC_IP}:8000/api/v1/wallet${NC}"
 echo -e "${GREEN}║  Services:   http://${PUBLIC_IP}:8000/api/v1/services${NC}"
-echo -e "${GREEN}║  Engine:     http://${PUBLIC_IP}:9001/health${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 echo "  Instance: $INSTANCE_ID ($INSTANCE_NAME)"
+echo "  IP:       $PUBLIC_IP"
 echo "  Key:      ${KEY_NAME}.pem"
 echo "  SSH:      ssh -i ${KEY_NAME}.pem ec2-user@$PUBLIC_IP"
+echo ""
+echo "  Update:   bash aws-update.sh"
 echo "  Logs:     ssh -i ${KEY_NAME}.pem ec2-user@$PUBLIC_IP 'sudo docker compose -f /root/stockai/docker-compose.yml logs -f'"
 echo ""
 echo "  Terminate: aws ec2 terminate-instances --instance-ids $INSTANCE_ID --region $REGION"
-echo "             aws ec2 delete-security-group --group-id $SG_ID --region $REGION"

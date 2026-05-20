@@ -1,6 +1,8 @@
 # StockAI AWS Environment
 
-## Current Instance (as of 2026-05-20)
+> **For AI agents:** Read this file first before any AWS operations. All commands, IPs, and procedures are here.
+
+## Current Instance
 
 | Field | Value |
 |-------|-------|
@@ -15,7 +17,7 @@
 | **State** | Running |
 | **Account ID** | `arn:aws:iam::453767499603:root` |
 
-## Deployed Services (via Docker Compose)
+## Services
 
 | Service | Port | Language | Status |
 |---------|------|----------|--------|
@@ -30,112 +32,143 @@
 | URL | Description |
 |-----|-------------|
 | `http://34.236.237.163:8000` | Dashboard (real-time) |
-| `http://34.236.237.163:8000/api/v1/wallet` | Wallet status (JSON) |
+| `http://34.236.237.163:8000/api/v1/health` | Health check |
+| `http://34.236.237.163:8000/api/v1/services` | Service statuses |
+| `http://34.236.237.163:8000/api/v1/wallet` | Wallet status |
 | `http://34.236.237.163:8000/api/v1/dash` | Trade history + summary |
-| `http://34.236.237.163:8000/api/v1/health` | Health check (+ LanceDB entries) |
-| `http://34.236.237.163:8000/api/v1/services` | All service statuses |
 | `http://34.236.237.163:8000/api/v1/quote/{TICKER}` | Live market quote |
-| `http://34.236.237.163:8000/ws/market` | WebSocket market feed |
 | `http://34.236.237.163:8080` | TOTP 2FA relay |
-| `http://34.236.237.163:9001/health` | Engine health check |
 
-## SSH Access
+## SSH
 
 ```bash
 ssh -i stockai-key.pem ec2-user@34.236.237.163
 ```
 
-## Useful Commands
+---
 
-### Check service status
+## Quick Operations
+
+### Deploy (fresh instance)
+
+```bash
+bash aws-deploy.sh
+```
+
+Creates new t3.medium (20GB EBS), copies `.env` + `execution-bin`, builds & starts all services.
+
+### Update (existing instance)
+
+```bash
+bash aws-update.sh                  # reads IP from this file
+bash aws-update.sh 34.236.237.163   # specific IP
+```
+
+Git pull → rebuilds changed services → restarts. Detects Rust changes automatically.
+
+### Check status
+
 ```bash
 ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
+curl -s http://34.236.237.163:8000/api/v1/health
+curl -s http://34.236.237.163:8000/api/v1/services
 ```
 
 ### View logs
+
 ```bash
-# Memory/Strategy logs
 ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-memory-1 --tail 50'
-
-# Engine logs
 ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-engine-1 --tail 50'
-
-# Orchestrator logs
 ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-orchestrator-1 --tail 50'
 ```
 
-### Redeploy after code push
+### Manual rebuild (single service)
+
 ```bash
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "
-cd /root/stockai && git pull origin main
-docker compose build memory && docker compose up -d memory
-"'
+# Memory (Python) — fast
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "cd /root/stockai && docker compose build memory && docker compose up -d memory"'
+
+# Engine (Rust) — needs execution-bin uploaded first
+scp -i stockai-key.pem execution/execution-bin ec2-user@34.236.237.163:/tmp/execution-bin
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "cp /tmp/execution-bin /root/stockai/execution/execution-bin && cd /root/stockai && docker compose build engine && docker compose up -d engine"'
 ```
 
-### Rebuild engine (Rust binary changes)
+### Enable paper trading
+
 ```bash
-# On EC2: install Rust natively, then build
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
-cd /root/stockai/execution && cargo build --release --bin execution
-cp target/release/execution ./execution-bin
-docker compose build engine && docker compose up -d engine
-"'
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode"'
 ```
 
-### Free disk space (when 8GB fills up)
+### Free disk space
+
 ```bash
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo bash -c "
-docker compose down
-docker system prune -af --volumes
-docker compose up -d
-"'
+ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "cd /root/stockai && docker compose down && docker system prune -af --volumes && docker compose up -d"'
 ```
 
-### Enable paper trading (if 2FA blocks trades)
-```bash
-ssh -i stockai-key.pem ec2-user@52.91.29.172 'sudo docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode"'
-```
+### Terminate
 
-### Terminate instance
 ```bash
 aws ec2 terminate-instances --instance-ids i-0845fd29ea0f8b328 --region us-east-1
 aws ec2 delete-security-group --group-id sg-0e816e1f85a798bf1 --region us-east-1
 ```
 
-## AWS Auth (for re-deploy)
+---
 
-```bash
-# Use AWS CLI v2 browser login (simplest)
-aws login
+## Architecture
 
-# Then deploy with one command
-MEMORY_DEEPSEEK_API_KEY=sk-... bash aws-deploy.sh
+```
+Client → :8000 → Memory (FastAPI + Python)
+                    ├── Strategy Agent (RSI, MACD, BB, forced trades)
+                    ├── Market Data (yfinance polling 2s)
+                    ├── Vector Store (LanceDB — postmortems + memory)
+                    ├── LLM Providers (DeepSeek, Gemini, OpenAI, Bedrock)
+                    └── WebSocket feeds (/ws/market, /ws/dashboard, /ws/services, /ws/wallet)
+
+Client → :8080 → Orchestrator (Go)
+                    ├── Redis pub/sub (trade:signal → trade:result)
+                    ├── TOTP 2FA relay
+                    └── Scheduler
+
+Engine → :9001 → Execution Engine (Rust)
+                    ├── Subscribes trade:signal on Redis
+                    ├── Mock broker (paper trading)
+                    └── Health check HTTP server
+
+Redis :6379 — pub/sub + 2fa:active key + position persistence
+PostgreSQL :5432 — trade history + wallet state + daily reports
 ```
 
-## Pipeline Status (2026-05-20)
+## Pipeline Flow
 
-- Paper trading: **Active** — forced trades every 5 min + natural RSI signals
-- Postmortems: **Active** — LanceDB stores analysis for every loss
-- Evolution memory: **Active** — vector similarity checks before each trade
-- Devil's Advocate: **Active** — LLM reviews every natural signal (relaxed for paper mode)
-- 2FA Telegram: Offline (bot token = "test") — paper mode bypasses via Redis key `2fa:active`
-- Dashboard WS: **Fixed** — periodic push every 5s (was event-only)
+1. **Market Data** polls yfinance every 2s → pushes quotes via WebSocket
+2. **Strategy Agent** scans for RSI/MACD/BB signals → forced trade every 5 min if no signal
+3. Pre-trade checks: memory (LanceDB), sentiment, advocate, researcher, macro
+4. Signal published to Redis `trade:signal`
+5. **Engine** receives signal → mock execution → publishes `trade:result`
+6. **Strategy** listens to `trade:result` → tracks consecutive losses
+7. Losses trigger **Critic** postmortem → stored in LanceDB with correction rules
+
+## Paper Trading Config
+
+- `MOCK_MODE=true` in engine env
+- Redis key `2fa:active = "paper-mode"` bypasses 2FA check
+- Engine publishes OPEN/WIN/LOSS results to `trade:result`
+- Strategy tracks P&L, consecutive losses, daily loss limits
 
 ## Known Issues
 
-- **execution-bin not in git** — must be scp'd after clone (103MB, in .gitignore)
-- **Docker Compose v2** — Amazon Linux 2023 only ships v1; deploy script installs v2 plugin
-- **8GB EBS fills up** during Docker builds — fixed: new instances use 20GB
+- **execution-bin not in git** (103MB, in .gitignore) — must be scp'd on fresh deploy
+- **Docker Compose v2** — AL2023 ships v1 only; deploy script installs v2 plugin
+- **yfinance TzCache error** — harmless, cache folder exists but not used
 
 ## Deployment History
 
 | Date | Commit | Change |
 |------|--------|--------|
-| 2026-05-20 | `1bb2804` | Fresh deploy: t3.medium + 20GB EBS + full .env copy + compose v2 + paper trading |
-| 2026-05-20 | `259f79a` | Skip 2FA in MOCK_MODE (code fix, engine binary not rebuilt on old instance) |
+| 2026-05-20 | `0787add` | Fresh deploy on new instance (34.236.237.163) — t3.medium, 20GB EBS |
+| 2026-05-20 | `1bb2804` | Deploy script: full .env copy, execution-bin upload, compose v2 install |
+| 2026-05-20 | `259f79a` | Skip 2FA check in MOCK_MODE (engine) |
 | 2026-05-20 | `819b498` | Dashboard WS periodic push every 5s |
-| 2026-05-20 | `10c6476` | Fix main.py indentation bug (WS routes orphaned) + settings_store path |
-| 2026-05-18 | `7d35722` | Forced paper trades, relaxed strategy + advocate |
-| 2026-05-18 | `749a86a` | Pre-built engine binary (avoids Rust OOM on t2.small) |
-| 2026-05-18 | `f706906` | Paper pipeline fixes (advocate, market state, P&L) |
-| 2026-05-18 | `dfca196` | Initial AWS deploy via user-data |
+| 2026-05-20 | `10c6476` | Fix main.py indentation bug (WS routes orphaned) |
+| 2026-05-18 | `7d35722` | Forced paper trades every 5 min |
+| 2026-05-18 | `dfca196` | Initial AWS deploy |

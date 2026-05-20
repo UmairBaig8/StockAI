@@ -126,3 +126,16 @@ class VectorStore:
             }])
         except Exception as e:
             logger.error(f"Audit log failed: {e}")
+
+
+_vector_store: VectorStore | None = None
+
+
+def get_vector_store(settings: Settings | None = None) -> VectorStore:
+    global _vector_store
+    if _vector_store is None:
+        if settings is None:
+            from .config import get_settings
+            settings = get_settings()
+        _vector_store = VectorStore(settings)
+    return _vector_store

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from functools import lru_cache
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
@@ -28,8 +29,21 @@ bridge.callbacks.append(strategy.feed_quote)
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 
+_NAV_LINKS = [
+    ("/", "Cockpit", "cockpit"),
+    ("/research", "Research", "research"),
+    ("/news", "News", "news"),
+    ("/backtest", "Backtest", "backtest"),
+    ("/history", "History", "history"),
+    ("/report", "Report", "report"),
+    ("/settings", "Settings", "settings"),
+    ("/llm", "LLM", "llm"),
+]
 
-def render_page(template_name: str, title: str, active: str) -> str:
+
+@lru_cache(maxsize=16)
+def _cached_content(template_name: str) -> str:
+    """Extract content block from template — cached to avoid disk I/O per request."""
     raw = (TEMPLATE_DIR / template_name).read_text()
     if "{% block content %}" in raw:
         block = raw.split("{% block content %}", 1)[1]
@@ -39,22 +53,15 @@ def render_page(template_name: str, title: str, active: str) -> str:
         match = re.search(r"<main[^>]*>([\s\S]*?)</main>", raw)
         content = match.group(1) if match else raw
         content += "\n" + "\n".join(re.findall(r"<script[\s\S]*?</script>", raw))
-    content = content.replace("</body>", "").replace("</html>", "")
-    links = [
-        ("/", "Cockpit", "cockpit"),
-        ("/research", "Research", "research"),
-        ("/news", "News", "news"),
-        ("/backtest", "Backtest", "backtest"),
-        ("/history", "History", "history"),
-        ("/report", "Report", "report"),
-        ("/settings", "Settings", "settings"),
-        ("/llm", "LLM", "llm"),
-    ]
+    return content.replace("</body>", "").replace("</html>", "")
+
+
+def render_page(template_name: str, title: str, active: str) -> str:
+    content = _cached_content(template_name)
     nav = "".join(
         f'<a href="{href}" class="{"active" if key == active else ""}">{label}</a>'
-        for href, label, key in links
+        for href, label, key in _NAV_LINKS
     )
-    mobile_nav = nav
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -73,7 +80,7 @@ def render_page(template_name: str, title: str, active: str) -> str:
       <a href="http://3.85.55.232:8080" rel="noopener">2FA Relay</a>
     </aside>
     <div class="page-shell">
-      <nav class="mobile-nav" aria-label="Mobile navigation">{mobile_nav}</nav>
+      <nav class="mobile-nav" aria-label="Mobile navigation">{nav}</nav>
       <main class="main" id="main-content">{content}</main>
     </div>
   </div>

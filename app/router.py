@@ -55,7 +55,8 @@ def get_researcher(settings: Settings = Depends(get_settings)) -> ResearcherAgen
 
 
 def get_store(settings: Settings = Depends(get_settings)) -> VectorStore:
-    return VectorStore(settings)
+    from .vector_store import get_vector_store
+    return get_vector_store(settings)
 
 
 def get_advocate(settings: Settings = Depends(get_settings)) -> DevilsAdvocate:
@@ -135,7 +136,7 @@ async def research_batch(
 
 @router.get("/dash", response_model=DashResponse)
 async def dash(store: VectorStore = Depends(get_store), settings: Settings = Depends(get_settings)):
-    from .db import get_summary, get_pool
+    from .db import get_summary
     snap = event_store.snapshot()
     trades = snap["trades"]
 
@@ -190,7 +191,7 @@ async def services_status(settings: Settings = Depends(get_settings)):
     def _check_port(host: str, port: int) -> bool:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(0.5)
+            s.settimeout(0.2)
             result = s.connect_ex((host, port)) == 0
             s.close()
             return result

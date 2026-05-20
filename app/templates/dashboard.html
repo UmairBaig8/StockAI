@@ -219,6 +219,29 @@ setInterval(updateSessionBanner,1000);
 let eqData = [];
 let mkt = {};
 
+// ── Mock data for UI testing ──
+(function injectMockData(){
+  // Equity curve: 50 data points trending up
+  const base=100000;
+  for(let i=0;i<50;i++){
+    const noise=(Math.random()-0.35)*800;
+    eqData.push({t:Date.now()-((50-i)*10000),v:base+noise+i*120});
+  }
+
+  // Market quotes
+  mkt={
+    'RELIANCE.NS':{ticker:'RELIANCE.NS',last_price:1389.50,bid:1388.00,trend:'up'},
+    'SBIN.NS':{ticker:'SBIN.NS',last_price:962.30,bid:961.00,trend:'up'},
+    'TCS.NS':{ticker:'TCS.NS',last_price:4125.00,bid:4120.00,trend:'down'},
+    'INFY.NS':{ticker:'INFY.NS',last_price:1845.20,bid:1843.00,trend:'up'},
+    'HDFCBANK.NS':{ticker:'HDFCBANK.NS',last_price:1678.40,bid:1676.00,trend:'up'},
+    'ICICIBANK.NS':{ticker:'ICICIBANK.NS',last_price:1298.60,bid:1297.00,trend:'down'},
+    'WIPRO.NS':{ticker:'WIPRO.NS',last_price:562.80,bid:561.50,trend:'up'},
+    'TATAMOTORS.NS':{ticker:'TATAMOTORS.NS',last_price:985.40,bid:984.00,trend:'down'},
+  };
+  renderWatch();
+})();
+
 // ── Initial data fetch (instant, no WS wait) ──
 (async function loadInitial(){
   try{
@@ -403,6 +426,60 @@ const closeWallet = connectWS('/ws/wallet', d => {
   }
   prevPositions=[...keys];
 });
+
+// ── Mock wallet data for UI testing ──
+setTimeout(()=>{
+  const mockW={
+    type:'wallet',
+    wallet:{
+      initial_capital:100000,
+      invested:12383,
+      available:87617,
+      realized_pnl:450.00,
+      total_pnl:450.00,
+      positions:{
+        'RELIANCE.NS':{ticker:'RELIANCE.NS',qty:3,avg_price:1361.00,side:'LONG'},
+        'SBIN.NS':{ticker:'SBIN.NS',qty:5,avg_price:950.40,side:'LONG'},
+        'TCS.NS':{ticker:'TCS.NS',qty:2,avg_price:4150.00,side:'LONG'},
+      }
+    }
+  };
+  // Simulate price movement for mock positions
+  mkt['RELIANCE.NS']={ticker:'RELIANCE.NS',last_price:1389.50,bid:1388.00,trend:'up'};
+  mkt['SBIN.NS']={ticker:'SBIN.NS',last_price:962.30,bid:961.00,trend:'up'};
+  mkt['TCS.NS']={ticker:'TCS.NS',last_price:4125.00,bid:4120.00,trend:'down'};
+  renderWatch();
+  // Push mock wallet data through the handler
+  const w=mockW.wallet;
+  const cap=w.initial_capital||100000;
+  const winv=w.invested||0;
+  const avail=w.available||cap;
+  const wpnl=w.realized_pnl||w.total_pnl||0;
+  $('w-capital').textContent='₹'+cap.toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-invested').textContent='₹'+winv.toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-available').textContent='₹'+avail.toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-pnl').textContent=(wpnl>=0?'+':'')+'₹'+Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});
+  $('w-pnl').className='val '+(wpnl>=0?'green':'red');
+  const keys=Object.keys(w.positions||{});
+  const row=$('positions-row');
+  row.innerHTML=keys.map(t=>{
+    const p=w.positions[t],m=mkt[t],cur=m?.last_price||p.avg_price;
+    const pp=((cur-p.avg_price)/p.avg_price*100);
+    const pnlVal=((cur-p.avg_price)*p.qty);
+    const state=pp>=0?'profit':'loss';
+    const side=(p.side||'LONG').toLowerCase();
+    const pnlClass=pp>=0?'positive':'negative';
+    const pnlSign=pp>=0?'+':'';
+    return `<div class="pos-card ${state}"><div class="pos-header"><span class="tkr">${t}</span><span class="pos-badge ${side}">${side}</span></div><div class="pos-primary"><span class="pos-price">₹${cur.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="pos-pnl ${pnlClass}">${pnlSign}${pp.toFixed(2)}% (<span class="pos-pnl-val">${pnlVal>=0?'+':'-'}₹${Math.abs(pnlVal).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})})</span></span></div><div class="pos-divider"></div><div class="pos-secondary"><div class="pos-meta"><span class="pos-meta-lbl">Avg. Entry</span><span class="pos-meta-val">₹${p.avg_price.toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:0})}</span></div><div class="pos-meta"><span class="pos-meta-lbl">Quantity</span><span class="pos-meta-val">${p.qty} Share${p.qty>1?'s':''}</span></div></div><div class="sparkline" id="spark-${t}"></div></div>`;
+  }).join('');
+  keys.forEach(t=>{
+    const p=w.positions[t],m=mkt[t];
+    if(m)pushPrice(t,m.last_price);
+    const el=document.getElementById('spark-'+t);
+    if(el)drawSparkline(el,t);
+  });
+  prevPositions=[...keys];
+},800);
 
 // ── Cleanup on page leave ──
 window.addEventListener('beforeunload', () => { closeServices(); closeDashboard(); closeWallet(); });

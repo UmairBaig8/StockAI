@@ -6,7 +6,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-SETTINGS_PATH = Path(os.getenv("SETTINGS_PATH", "/data/settings.json"))
+SETTINGS_PATH = Path(os.getenv("SETTINGS_PATH", str(Path(__file__).parent.parent / "data" / "settings.json")))
 SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DEFAULTS: dict[str, Any] = {

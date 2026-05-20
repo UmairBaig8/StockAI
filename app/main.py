@@ -221,23 +221,6 @@ def create_app() -> FastAPI:
             bridge.remove_client(ws)
             logger.info(f"Market data client disconnected (total: {len(bridge.clients)})")
 
-async def _ws_listen(ws: WebSocket, bridge, name: str):
-    try:
-        while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        bridge.remove(ws)
-        logger.info(f"WS {name} client disconnected (total: {len(bridge.clients)})")
-
-
-async def _ws_handler(ws: WebSocket, bridge, name: str):
-    try:
-        await bridge.send_initial(ws)
-    except Exception:
-        pass
-    await _ws_listen(ws, bridge, name)
-
-
     @app.websocket("/ws/dashboard")
     async def dashboard_ws(ws: WebSocket):
         from .dashboard_bridge import dashboard_bridge as b
@@ -277,6 +260,23 @@ async def _ws_handler(ws: WebSocket, bridge, name: str):
         return JSONResponse({"order_id": order_id, "status": "Cancelled", "message": "Order cancelled"})
 
     return app
+
+
+async def _ws_listen(ws: WebSocket, bridge, name: str):
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        bridge.remove(ws)
+        logger.info(f"WS {name} client disconnected (total: {len(bridge.clients)})")
+
+
+async def _ws_handler(ws: WebSocket, bridge, name: str):
+    try:
+        await bridge.send_initial(ws)
+    except Exception:
+        pass
+    await _ws_listen(ws, bridge, name)
 
 
 app = create_app()

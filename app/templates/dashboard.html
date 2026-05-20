@@ -39,7 +39,7 @@
           </div>
         </div>
 
-        <!-- Active Signals + Open Positions -->
+        <!-- Open Positions -->
         <div class="card half">
           <h2>Open Positions</h2>
           <div class="pos-row" id="positions-row">
@@ -47,15 +47,7 @@
           </div>
         </div>
 
-        <div class="card half">
-          <h2>Active Signals</h2>
-          <div class="signal-strip" id="signal-strip">
-            <span class="dot idle"></span>
-            <span id="signal-text" style="color:var(--muted)">Scanning market...</span>
-          </div>
-        </div>
-
-        <!-- Market Watch + Recent Trades -->
+        <!-- Watchlist -->
         <div class="card half">
           <h2>Watchlist</h2>
           <div style="overflow-x:auto">
@@ -64,11 +56,20 @@
           </div>
         </div>
 
+        <!-- Recent Trades -->
         <div class="card half">
           <h2>Recent Trades</h2>
           <div style="overflow-x:auto">
             <table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>@</th><th>P&L</th></tr></thead>
             <tbody id="trades-body"><tr><td colspan="6" style="color:var(--muted)">No trades</td></tr></tbody></table>
+          </div>
+        </div>
+
+        <!-- Active Signals (thin strip, spans full width) -->
+        <div class="card wide" style="padding:9px 15px">
+          <div class="signal-strip" id="signal-strip" style="min-height:28px;padding:0;background:none;border:0;font-size:0.78rem">
+            <span class="dot idle"></span>
+            <span id="signal-text" style="color:var(--muted)">Scanning market...</span>
           </div>
         </div>
 

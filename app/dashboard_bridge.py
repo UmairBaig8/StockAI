@@ -7,6 +7,18 @@ from fastapi import WebSocket
 logger = logging.getLogger(__name__)
 
 
+def _check_sync(host: str, port: int) -> bool:
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.15)
+        result = s.connect_ex((host, port)) == 0
+        s.close()
+        return result
+    except Exception:
+        return False
+
+
 class DashboardBridge:
     """Pushes live dashboard state to connected WebSocket clients on every trade/event."""
 
@@ -83,9 +95,7 @@ class DashboardBridge:
                 pass
 
         wallet = wallet_instance.snapshot()
-
-        # Services (lightweight — no socket checks over WS)
-        services = self._service_status()
+        services = await self._service_status_async()
 
         return {
             "type": "dashboard",
@@ -107,32 +117,27 @@ class DashboardBridge:
             "services": services,
         }
 
-    def _service_status(self) -> dict:
-        import socket, os
+    async def _check_service_async(self, name: str, port: int) -> bool:
+        import os
+        hosts = [name, "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
+        for host in hosts:
+            ok = await asyncio.to_thread(_check_sync, host, port)
+            if ok:
+                return True
+        return False
 
-        def _check(host: str, port: int) -> bool:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.15)
-                result = s.connect_ex((host, port)) == 0
-                s.close()
-                return result
-            except Exception:
-                return False
-
-        hosts_redis = ["redis", "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
-        hosts_engine = ["engine", "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
-        hosts_orch = ["orchestrator", "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
-
-        redis_ok = any(_check(h, 6379) for h in hosts_redis)
-        engine_ok = any(_check(h, 9001) for h in hosts_engine)
-        orch_ok = any(_check(h, 8080) for h in hosts_orch)
-
+    async def _service_status_async(self) -> dict:
+        redis_ok, engine_ok, orch_ok = await asyncio.gather(
+            self._check_service_async("redis", 6379),
+            self._check_service_async("engine", 9001),
+            self._check_service_async("orchestrator", 8080),
+            return_exceptions=True,
+        )
         return {
             "memory": {"online": True, "port": 8000},
-            "redis": {"online": redis_ok, "port": 6379},
-            "engine": {"online": engine_ok, "port": 9001},
-            "orchestrator": {"online": orch_ok, "port": 8080},
+            "redis": {"online": bool(redis_ok), "port": 6379},
+            "engine": {"online": bool(engine_ok), "port": 9001},
+            "orchestrator": {"online": bool(orchestrator_ok), "port": 8080},
             "llm": {"online": True, "provider": "active"},
         }
 

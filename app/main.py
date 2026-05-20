@@ -238,45 +238,45 @@ async def _ws_handler(ws: WebSocket, bridge, name: str):
     await _ws_listen(ws, bridge, name)
 
 
-    @app.websocket("/ws/dashboard")
-    async def dashboard_ws(ws: WebSocket):
-        from .dashboard_bridge import dashboard_bridge as b
-        await ws.accept()
-        b.add(ws)
-        await _ws_handler(ws, b, "dashboard")
+@app.websocket("/ws/dashboard")
+async def dashboard_ws(ws: WebSocket):
+    from .dashboard_bridge import dashboard_bridge as b
+    await ws.accept()
+    b.add(ws)
+    await _ws_handler(ws, b, "dashboard")
 
-    @app.websocket("/ws/services")
-    async def services_ws(ws: WebSocket):
-        from .dashboard_bridge import services_bridge as b
-        await ws.accept()
-        b.add(ws)
-        await b.send_initial(ws)
-        await _ws_listen(ws, b, "services")
+@app.websocket("/ws/services")
+async def services_ws(ws: WebSocket):
+    from .dashboard_bridge import services_bridge as b
+    await ws.accept()
+    b.add(ws)
+    await b.send_initial(ws)
+    await _ws_listen(ws, b, "services")
 
-    @app.websocket("/ws/wallet")
-    async def wallet_ws(ws: WebSocket):
-        from .dashboard_bridge import wallet_bridge as b
-        await ws.accept()
-        b.add(ws)
-        await b.send_initial(ws)
-        await _ws_listen(ws, b, "wallet")
+@app.websocket("/ws/wallet")
+async def wallet_ws(ws: WebSocket):
+    from .dashboard_bridge import wallet_bridge as b
+    await ws.accept()
+    b.add(ws)
+    await b.send_initial(ws)
+    await _ws_listen(ws, b, "wallet")
 
-    @app.post("/orders")
-    async def place_order(request: Request):
-        import uuid
-        body = await request.json()
-        ticker = body.get("ticker", "?")
-        side = body.get("side", "?")
-        qty = body.get("quantity", 0)
-        order_id = str(uuid.uuid4())[:8]
-        logger.info(f"Paper order: {ticker} {side} qty={qty} id={order_id}")
-        return JSONResponse({"order_id": order_id, "status": "Open", "message": "Order accepted"})
+@app.post("/orders")
+async def place_order(request: Request):
+    import uuid
+    body = await request.json()
+    ticker = body.get("ticker", "?")
+    side = body.get("side", "?")
+    qty = body.get("quantity", 0)
+    order_id = str(uuid.uuid4())[:8]
+    logger.info(f"Paper order: {ticker} {side} qty={qty} id={order_id}")
+    return JSONResponse({"order_id": order_id, "status": "Open", "message": "Order accepted"})
 
-    @app.delete("/orders/{order_id}")
-    async def cancel_order(order_id: str):
-        return JSONResponse({"order_id": order_id, "status": "Cancelled", "message": "Order cancelled"})
+@app.delete("/orders/{order_id}")
+async def cancel_order(order_id: str):
+    return JSONResponse({"order_id": order_id, "status": "Cancelled", "message": "Order cancelled"})
 
-    return app
+return app
 
 
 app = create_app()

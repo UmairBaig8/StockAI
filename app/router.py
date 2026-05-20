@@ -202,6 +202,7 @@ async def dash_all(store: VectorStore = Depends(get_store), settings: Settings =
     losses = sum(1 for t in trades if t.pnl <= 0)
     if total == 0:
         try:
+            from .db import get_summary
             db_summary = await get_summary()
             total = db_summary.get("total_trades", 0)
             wins = db_summary.get("wins", 0)

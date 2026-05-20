@@ -1,18 +1,24 @@
 # StockAI Roadmap
 
+> **Status:** Paper trading live on AWS · Auto start/stop scheduled · SEBI compliant
+
 ## Already Done
 
-- Multi-agent pipeline (Strategy, Critic, Devil's Advocate, Researcher, Sentiment, Macro)
-- Rust execution engine with 2FA gate + SEBI rate limiter
-- Go orchestrator with Redis pub/sub + Telegram 2FA relay
-- LanceDB evolution memory + audit trail (persistent)
-- LLM-powered ticker discovery (auto, hourly during market hours)
-- Best-opportunity selection with momentum/activity filters
-- Real P&L from live market prices between entry and exit
-- Market-hours aware (09:15–15:30 IST, Mon–Fri)
-- Responsive WCAG 2 dashboard + settings UI
-- All strategy params hot-reloadable via UI
-- Docker Compose + AWS EC2 one-command deploy
+- [x] Multi-agent pipeline (Strategy, Critic, Devil's Advocate, Researcher, Sentiment, Macro)
+- [x] Rust execution engine with 2FA gate + SEBI rate limiter
+- [x] Go orchestrator with Redis pub/sub + Telegram 2FA relay
+- [x] LanceDB evolution memory + audit trail (persistent)
+- [x] LLM-powered ticker discovery (auto, hourly during market hours)
+- [x] Best-opportunity selection with momentum/activity filters
+- [x] Real P&L from live market prices between entry and exit
+- [x] Market-hours aware (09:15–15:30 IST, Mon–Fri)
+- [x] Responsive WCAG 2 dashboard + settings UI
+- [x] All strategy params hot-reloadable via UI
+- [x] Docker Compose + AWS EC2 one-command deploy
+- [x] AWS auto start/stop (Lambda + EventBridge, Mon-Fri 9 AM - 3:30 PM IST)
+- [x] Elastic IP (static, never changes)
+- [x] EBS snapshots daily with 30-day retention (SEBI audit)
+- [x] AI agent skills (opencode automation for dev workflows)
 
 ---
 

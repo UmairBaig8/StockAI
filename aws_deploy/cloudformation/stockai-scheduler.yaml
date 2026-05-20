@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: StockAI EC2 Auto Start/Stop with EBS Snapshot retention for SEBI audit
+
+Parameters:
+  InstanceId:
+    Type: String
+    Default: i-0845fd29ea0f8b328
+    Description: EC2 Instance ID to manage
+
+  ElasticIpAllocationId:
+    Type: String
+    Default: eipalloc-044a7a75729bf849b
+    Description: EIP Allocation ID for static IP
+
+  StartHourUTC:
+    Type: Number
+    Default: 3
+    Description: Hour (UTC) to start instance (3 = 8:30 AM IST)
+
+  StopHourUTC:
+    Type: Number
+    Default: 10
+    Description: Hour (UTC) to stop instance (10 = 3:30 PM IST)
+
+  SnapshotRetentionDays:
+    Type: Number
+    Default: 30
+    Description: Days to retain EBS snapshots for SEBI audit
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: stockai-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: stockai-ec2-ebs-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - ec2:DescribeInstances
+                  - ec2:DescribeVolumes
+                  - ec2:CreateSnapshot
+                  - ec2:DescribeSnapshots
+                  - ec2:DeleteSnapshot
+                  - ec2:CreateTags
+                  - ec2:AssociateAddress
+                  - ec2:DescribeAddresses
+                Resource: '*'
+
+  StockAiSchedulerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: stockai-scheduler
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 256
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          INSTANCE_ID: !Ref InstanceId
+          EIP_ALLOCATION_ID: !Ref ElasticIpAllocationId
+          RETENTION_DAYS: !Ref SnapshotRetentionDays
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+          import logging
+          from datetime import datetime, timedelta
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          ec2 = boto3.client('ec2')
+          instance_id = os.environ['INSTANCE_ID']
+          eip_allocation_id = os.environ['EIP_ALLOCATION_ID']
+          retention_days = int(os.environ['RETENTION_DAYS'])
+
+          def get_instance_state():
+              resp = ec2.describe_instances(InstanceIds=[instance_id])
+              return resp['Reservations'][0]['Instances'][0]['State']['Name']
+
+          def get_root_volume_id():
+              resp = ec2.describe_instances(InstanceIds=[instance_id])
+              for block in resp['Reservations'][0]['Instances'][0]['BlockDeviceMappings']:
+                  if block.get('Ebs', {}).get('DeleteOnTermination') is not None:
+                      return block['Ebs']['VolumeId']
+              return None
+
+          def create_snapshot(volume_id, tag_date):
+              snapshot = ec2.create_snapshot(
+                  VolumeId=volume_id,
+                  Description=f'StockAI auto-snapshot {tag_date} (SEBI audit)'
+              )
+              ec2.create_tags(
+                  Resources=[snapshot['SnapshotId']],
+                  Tags=[
+                      {'Key': 'Name', 'Value': f'stockai-{tag_date}'},
+                      {'Key': 'Purpose', 'Value': 'SEBI-audit'},
+                      {'Key': 'InstanceId', 'Value': instance_id},
+                      {'Key': 'CreatedDate', 'Value': tag_date}
+                  ]
+              )
+              logger.info(f"Snapshot created: {snapshot['SnapshotId']}")
+              return snapshot['SnapshotId']
+
+          def prune_old_snapshots():
+              cutoff = datetime.utcnow() - timedelta(days=retention_days)
+              paginator = ec2.get_paginator('describe_snapshots')
+              for page in paginator.paginate(
+                  OwnerIds=['self'],
+                  Filters=[{'Name': 'tag:Purpose', 'Values': ['SEBI-audit']}]
+              ):
+                  for snap in page['Snapshots']:
+                      snap_time = datetime.strptime(snap['StartTime'].split('.')[0], '%Y-%m-%dT%H:%M:%S')
+                      if snap_time < cutoff:
+                          ec2.delete_snapshot(SnapshotId=snap['SnapshotId'])
+                          logger.info(f"Deleted old snapshot: {snap['SnapshotId']} ({snap['StartTime']})")
+
+          def handler(event, context):
+              action = event.get('action', '')
+              state = get_instance_state()
+              logger.info(f"Current state: {state}, Requested action: {action}")
+
+              if action == 'start':
+                  if state == 'stopped':
+                      ec2.start_instances(InstanceIds=[instance_id])
+                      logger.info(f"Started instance {instance_id}")
+                      ec2.waiter('instance_running').wait(InstanceIds=[instance_id])
+                      ec2.associate_address(
+                          InstanceId=instance_id,
+                          AllocationId=eip_allocation_id
+                      )
+                      logger.info(f"EIP re-associated to {instance_id}")
+                      return {'statusCode': 200, 'body': 'Instance started + EIP associated'}
+                  elif state == 'running':
+                      ec2.associate_address(
+                          InstanceId=instance_id,
+                          AllocationId=eip_allocation_id
+                      )
+                      return {'statusCode': 200, 'body': 'Already running + EIP verified'}
+                  else:
+                      return {'statusCode': 400, 'body': f'Cannot start from state: {state}'}
+
+              elif action == 'stop':
+                  if state == 'running':
+                      volume_id = get_root_volume_id()
+                      if volume_id:
+                          tag_date = datetime.utcnow().strftime('%Y-%m-%d')
+                          create_snapshot(volume_id, tag_date)
+                      ec2.stop_instances(InstanceIds=[instance_id], Force=False)
+                      logger.info(f"Stopped instance {instance_id}")
+                      prune_old_snapshots()
+                      return {'statusCode': 200, 'body': 'Snapshot created + instance stopped'}
+                  elif state == 'stopped':
+                      return {'statusCode': 200, 'body': 'Already stopped'}
+                  else:
+                      return {'statusCode': 400, 'body': f'Cannot stop from state: {state}'}
+
+              return {'statusCode': 400, 'body': 'Unknown action'}
+
+  StartRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: stockai-start-schedule
+      Description: Start StockAI EC2 instance daily
+      ScheduleExpression: !Sub 'cron(30 ${StartHourUTC} ? * MON-FRI *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt StockAiSchedulerFunction.Arn
+          Id: StartTarget
+          Input: '{"action": "start"}'
+
+  StopRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: stockai-stop-schedule
+      Description: Snapshot + Stop StockAI EC2 instance daily
+      ScheduleExpression: !Sub 'cron(30 ${StopHourUTC} ? * MON-FRI *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt StockAiSchedulerFunction.Arn
+          Id: StopTarget
+          Input: '{"action": "stop"}'
+
+  LambdaStartPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StockAiSchedulerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StartRule.Arn
+
+  LambdaStopPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StockAiSchedulerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StopRule.Arn
+
+Outputs:
+  LambdaFunction:
+    Description: Lambda function ARN
+    Value: !GetAtt StockAiSchedulerFunction.Arn
+
+  StartSchedule:
+    Description: Start schedule (cron)
+    Value: !Sub 'cron(30 ${StartHourUTC} ? * MON-FRI *)'
+
+  StopSchedule:
+    Description: Stop schedule (cron)
+    Value: !Sub 'cron(30 ${StopHourUTC} ? * MON-FRI *)'
+
+  ManualTestStart:
+    Description: Test start manually
+    Value: 'aws lambda invoke --function-name stockai-scheduler --payload "{\"action\":\"start\"}" response.json'
+
+  ManualTestStop:
+    Description: Test stop manually
+    Value: 'aws lambda invoke --function-name stockai-scheduler --payload "{\"action\":\"stop\"}" response.json'

@@ -39,12 +39,21 @@ data/
 # Testing
 .pytest_cache/
 .playwright-mcp/
+coverage/
+.coverage
+*.out
 
 # OS
 Thumbs.db
-stockai-key.pem
-*.pem
 
 # Session logs
 session-*.md
 *.png
+*.har
+
+# AWS
+*.pem
+stockai-key.pem
+
+# Local overrides
+.env.local

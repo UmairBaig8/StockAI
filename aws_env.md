@@ -1,13 +1,14 @@
 # StockAI AWS Environment
 
-> **For AI agents:** Read this file first before any AWS operations. All commands, IPs, and procedures are here.
+> **For AI agents:** Read this file first for quick reference. Full documentation: [aws_deploy/README.md](aws_deploy/README.md). Skills: [SKILLS.md](SKILLS.md)
 
-## Current Instance
+## Quick Reference
 
 | Field | Value |
 |-------|-------|
 | **Instance ID** | `i-0845fd29ea0f8b328` |
-| **Public IP** | `34.236.237.163` |
+| **Elastic IP** | `52.70.58.6` (static, never changes) |
+| **EIP Allocation ID** | `eipalloc-044a7a75729bf849b` |
 | **Region** | `us-east-1` (N. Virginia) |
 | **Type** | `t3.medium` (2 vCPU, 4 GB RAM) |
 | **AMI** | Amazon Linux 2023 |
@@ -16,6 +17,8 @@
 | **Security Group** | `sg-0e816e1f85a798bf1` (ports 22, 8000, 8080, 9001) |
 | **State** | Running |
 | **Account ID** | `arn:aws:iam::453767499603:root` |
+| **Scheduler** | Mon-Fri 9:00 AM - 3:30 PM IST (auto start/stop) |
+| **Snapshots** | Daily EBS, 30-day retention (SEBI audit) |
 
 ## Services
 
@@ -31,18 +34,18 @@
 
 | URL | Description |
 |-----|-------------|
-| `http://34.236.237.163:8000` | Dashboard (real-time) |
-| `http://34.236.237.163:8000/api/v1/health` | Health check |
-| `http://34.236.237.163:8000/api/v1/services` | Service statuses |
-| `http://34.236.237.163:8000/api/v1/wallet` | Wallet status |
-| `http://34.236.237.163:8000/api/v1/dash` | Trade history + summary |
-| `http://34.236.237.163:8000/api/v1/quote/{TICKER}` | Live market quote |
-| `http://34.236.237.163:8080` | TOTP 2FA relay |
+| `http://52.70.58.6:8000` | Dashboard (real-time) |
+| `http://52.70.58.6:8000/api/v1/health` | Health check |
+| `http://52.70.58.6:8000/api/v1/services` | Service statuses |
+| `http://52.70.58.6:8000/api/v1/wallet` | Wallet status |
+| `http://52.70.58.6:8000/api/v1/dash` | Trade history + summary |
+| `http://52.70.58.6:8000/api/v1/quote/{TICKER}` | Live market quote |
+| `http://52.70.58.6:8080` | TOTP 2FA relay |
 
 ## SSH
 
 ```bash
-ssh -i stockai-key.pem ec2-user@34.236.237.163
+ssh -i stockai-key.pem ec2-user@52.70.58.6
 ```
 
 ---
@@ -61,7 +64,7 @@ Creates new t3.medium (20GB EBS), copies `.env` + `execution-bin`, builds & star
 
 ```bash
 bash aws-update.sh                  # reads IP from this file
-bash aws-update.sh 34.236.237.163   # specific IP
+bash aws-update.sh 52.70.58.6   # specific IP
 ```
 
 Git pull → rebuilds changed services → restarts. Detects Rust changes automatically.
@@ -69,40 +72,40 @@ Git pull → rebuilds changed services → restarts. Detects Rust changes automa
 ### Check status
 
 ```bash
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
-curl -s http://34.236.237.163:8000/api/v1/health
-curl -s http://34.236.237.163:8000/api/v1/services
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
+curl -s http://52.70.58.6:8000/api/v1/health
+curl -s http://52.70.58.6:8000/api/v1/services
 ```
 
 ### View logs
 
 ```bash
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-memory-1 --tail 50'
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-engine-1 --tail 50'
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker logs stockai-orchestrator-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker logs stockai-memory-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker logs stockai-engine-1 --tail 50'
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker logs stockai-orchestrator-1 --tail 50'
 ```
 
 ### Manual rebuild (single service)
 
 ```bash
 # Memory (Python) — fast
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "cd /root/stockai && docker compose build memory && docker compose up -d memory"'
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo bash -c "cd /root/stockai && docker compose build memory && docker compose up -d memory"'
 
 # Engine (Rust) — needs execution-bin uploaded first
-scp -i stockai-key.pem execution/execution-bin ec2-user@34.236.237.163:/tmp/execution-bin
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "cp /tmp/execution-bin /root/stockai/execution/execution-bin && cd /root/stockai && docker compose build engine && docker compose up -d engine"'
+scp -i stockai-key.pem execution/execution-bin ec2-user@52.70.58.6:/tmp/execution-bin
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo bash -c "cp /tmp/execution-bin /root/stockai/execution/execution-bin && cd /root/stockai && docker compose build engine && docker compose up -d engine"'
 ```
 
 ### Enable paper trading
 
 ```bash
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode"'
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode"'
 ```
 
 ### Free disk space
 
 ```bash
-ssh -i stockai-key.pem ec2-user@34.236.237.163 'sudo bash -c "cd /root/stockai && docker compose down && docker system prune -af --volumes && docker compose up -d"'
+ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo bash -c "cd /root/stockai && docker compose down && docker system prune -af --volumes && docker compose up -d"'
 ```
 
 ### Terminate
@@ -165,7 +168,7 @@ PostgreSQL :5432 — trade history + wallet state + daily reports
 
 | Date | Commit | Change |
 |------|--------|--------|
-| 2026-05-20 | `0787add` | Fresh deploy on new instance (34.236.237.163) — t3.medium, 20GB EBS |
+| 2026-05-20 | `0787add` | Fresh deploy on new instance (52.70.58.6) — t3.medium, 20GB EBS |
 | 2026-05-20 | `1bb2804` | Deploy script: full .env copy, execution-bin upload, compose v2 install |
 | 2026-05-20 | `259f79a` | Skip 2FA check in MOCK_MODE (engine) |
 | 2026-05-20 | `819b498` | Dashboard WS periodic push every 5s |

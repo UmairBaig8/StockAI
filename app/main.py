@@ -92,11 +92,13 @@ def render_page(template_name: str, title: str, active: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from .wallet import wallet as w
+    from .dashboard_bridge import dashboard_bridge
     await w.load_from_db()
     asyncio.create_task(bridge.start())
     asyncio.create_task(strategy.run())
     asyncio.create_task(start_news_poller(900))
     asyncio.create_task(options_poller(1800))  # Options every 30 min
+    asyncio.create_task(dashboard_bridge.start_broadcast_loop())
     logger.info("StockAI Memory Service ready (market + strategy + news + critic + memory)")
     yield
     bridge.stop()
@@ -213,6 +215,20 @@ def create_app() -> FastAPI:
         except WebSocketDisconnect:
             bridge.remove_client(ws)
             logger.info(f"Market data client disconnected (total: {len(bridge.clients)})")
+
+    @app.websocket("/ws/dashboard")
+    async def dashboard_ws(ws: WebSocket):
+        from .dashboard_bridge import dashboard_bridge as db_bridge
+        await ws.accept()
+        db_bridge.add_client(ws)
+        logger.info(f"Dashboard client connected (total: {len(db_bridge.clients)})")
+        await db_bridge.send_initial(ws)
+        try:
+            while True:
+                await ws.receive_text()
+        except WebSocketDisconnect:
+            db_bridge.remove_client(ws)
+            logger.info(f"Dashboard client disconnected (total: {len(db_bridge.clients)})")
 
     @app.post("/orders")
     async def place_order(request: Request):

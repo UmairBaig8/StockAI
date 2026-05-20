@@ -13,13 +13,16 @@ class EventStore:
 
     def add_trade(self, trade: DashTrade):
         self.trades.appendleft(trade)
+        _notify_dashboard()
 
     def add_event(self, msg: str, level: str = "info"):
         self.events.appendleft(DashEvent(msg=msg, level=level))
+        _notify_dashboard()
 
     def add_postmortem(self, rule: str):
         self.last_postmortem = datetime.utcnow().strftime("%H:%M:%S UTC")
         self.recent_rules.appendleft(rule)
+        _notify_dashboard()
 
     def snapshot(self) -> dict:
         return {
@@ -28,6 +31,14 @@ class EventStore:
             "last_postmortem": self.last_postmortem,
             "recent_rules": list(self.recent_rules),
         }
+
+
+def _notify_dashboard():
+    try:
+        from .dashboard_bridge import dashboard_bridge
+        dashboard_bridge.mark_dirty()
+    except Exception:
+        pass
 
 
 store = EventStore()

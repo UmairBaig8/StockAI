@@ -53,6 +53,7 @@ class Wallet:
 
         logger.info(f"Position opened: {ticker} {side} qty={qty} @ {price} | available={self.available:,.0f} invested={self.invested:,.0f}")
         self._save()
+        _notify_dashboard()
 
     def close_position(self, ticker: str, qty: int, price: float):
         if ticker not in self.positions:
@@ -75,6 +76,7 @@ class Wallet:
 
         logger.info(f"Position closed: {ticker} qty={close_qty} @ {price} P&L=₹{pnl:,.2f}")
         self._save()
+        _notify_dashboard()
 
     def _save(self):
         try:
@@ -134,3 +136,11 @@ class Wallet:
 
 
 wallet = Wallet()
+
+
+def _notify_dashboard():
+    try:
+        from .dashboard_bridge import dashboard_bridge
+        dashboard_bridge.mark_dirty()
+    except Exception:
+        pass

@@ -30,6 +30,11 @@
   th,td{padding:5px 8px;border-bottom:1px solid var(--border-soft)}
   th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);font-weight:700;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.05em}
   tr:hover td{background:rgba(255,255,255,0.015)}
+  tr.trace-detail td{padding:0;background:var(--surface-2)}
+  .trace-detail-inner{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+  .trace-detail-inner pre{background:var(--bg);border:1px solid var(--border-soft);border-radius:8px;padding:10px;font-size:0.65rem;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0;line-height:1.5}
+  .trace-detail-inner h5{font-size:0.6rem;color:var(--muted);text-transform:uppercase;margin-bottom:6px;letter-spacing:0.05em}
+  .trace-expand{cursor:pointer;color:var(--accent);font-size:0.6rem;text-decoration:underline}
   .trace-err{color:var(--err)}
   .trace-ok{color:var(--accent)}
 </style>
@@ -53,17 +58,23 @@
   <div class="trace-stats" id="trace-summary"></div>
 </div>
 
+<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
+  <input id="trace-filter" type="text" placeholder="Filter by agent, provider, error..." style="flex:1;min-width:200px;font-size:0.7rem;padding:4px 8px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:8px;color:var(--fg)" oninput="filterTraces()">
+  <label style="font-size:0.62rem;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" id="filter-errors" onchange="filterTraces()"> Errors only</label>
+</div>
+
 <div id="agent-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
 
 <div class="table-wrap">
   <table>
-    <thead><tr><th>Time</th><th>Agent</th><th>Provider / Model</th><th>Tokens</th><th>Latency</th><th>Status</th></tr></thead>
-    <tbody id="trace-body"><tr><td colspan="6" style="color:var(--muted);text-align:center">Loading traces...</td></tr></tbody>
+    <thead><tr><th>Time</th><th>Agent</th><th>Provider / Model</th><th>Tokens</th><th>Latency</th><th>Status</th><th></th></tr></thead>
+    <tbody id="trace-body"><tr><td colspan="7" style="color:var(--muted);text-align:center">Loading traces...</td></tr></tbody>
   </table>
 </div>
 {% endblock %}
 <script>
 let _snapshots=[];
+let _allTraces=[];
 const MAX_SNAPS=30;
 
 async function load(){
@@ -101,16 +112,25 @@ async function loadTraces(){
       `<div class="stat" style="flex:0 0 auto;min-width:80px"><span class="val" style="font-size:0.82rem">${st.calls}</span><span class="lbl">${a} <span style="font-size:0.55rem">${st.avg_latency_ms}ms</span></span></div>`
     ).join('');
     const traces=d.traces||[];
-    el.innerHTML=traces.reverse().map(t=>
-      `<tr>
+    let html='';
+    traces.reverse().forEach((t,i)=>{
+      const idx=traces.length-1-i;
+      html+=`<tr>
         <td>${new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false})}</td>
         <td>${t.agent}</td>
         <td style="font-size:0.64rem;color:var(--muted)">${t.provider}/${t.model}</td>
         <td>${t.prompt_tokens_est}+${t.response_tokens_est}</td>
         <td>${t.latency_ms}ms</td>
-        <td class="${t.success?'trace-ok':'trace-err'}">${t.success?'OK':t.error||'ERR'}</td>
-      </tr>`
-    ).join('');
+        <td class="${t.success?'trace-ok':'trace-err'}">${t.success?'OK':(t.error||'ERR').substring(0,40)}</td>
+        <td><span class="trace-expand" onclick="toggleTrace(${idx})">view</span></td>
+      </tr>`;
+      html+=`<tr class="trace-detail" id="trace-${idx}" style="display:none"><td colspan="7"><div class="trace-detail-inner">
+        <div><h5>Request (prompt)</h5><pre>${escHtml(t.prompt||'(empty)')}</pre></div>
+        <div><h5>Response</h5><pre>${escHtml(t.response||'(empty)')}</pre></div>
+      </div></td></tr>`;
+    });
+    _allTraces=traces;
+    filterTraces();
     // build snapshot
     const calls=traces.length;
     const avgLat=traces.length?Math.round(traces.reduce((x,t)=>x+(t.latency_ms||0),0)/traces.length):0;
@@ -128,6 +148,39 @@ async function loadTraces(){
     drawSpark('token-spark',_snapshots.map(s=>s.tokens),'var(--focus)');
     drawSpark('error-spark',_snapshots.map(s=>s.errRate),'var(--err)');
   }catch(e){el.innerHTML='<tr><td colspan="6" style="color:var(--err);text-align:center">Error loading traces</td></tr>'}
+}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function toggleTrace(i){const el=document.getElementById('trace-'+i);el.style.display=el.style.display==='none'?'':'none';}
+function filterTraces(){
+  const q=(document.getElementById('trace-filter').value||'').toLowerCase();
+  const errsOnly=document.getElementById('filter-errors').checked;
+  const filtered=_allTraces.filter(t=>{
+    if(errsOnly&&t.success)return false;
+    if(q){
+      const hay=(t.agent+' '+t.provider+' '+t.model+' '+t.error+' '+t.prompt).toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+  const el=document.getElementById('trace-body');
+  let html='';
+  filtered.forEach((t,i)=>{
+    const idx=_allTraces.indexOf(t);
+    html+=`<tr>
+      <td>${new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false})}</td>
+      <td>${t.agent}</td>
+      <td style="font-size:0.64rem;color:var(--muted)">${t.provider}/${t.model}</td>
+      <td>${t.prompt_tokens_est}+${t.response_tokens_est}</td>
+      <td>${t.latency_ms}ms</td>
+      <td class="${t.success?'trace-ok':'trace-err'}">${t.success?'OK':(t.error||'ERR').substring(0,40)}</td>
+      <td><span class="trace-expand" onclick="toggleTrace(${idx})">view</span></td>
+    </tr>`;
+    html+=`<tr class="trace-detail" id="trace-${idx}" style="display:none"><td colspan="7"><div class="trace-detail-inner">
+      <div><h5>Request (prompt)</h5><pre>${escHtml(t.prompt||'(empty)')}</pre></div>
+      <div><h5>Response</h5><pre>${escHtml(t.response||'(empty)')}</pre></div>
+    </div></td></tr>`;
+  });
+  el.innerHTML=html||'<tr><td colspan="7" style="color:var(--muted);text-align:center">No traces match filter</td></tr>';
 }
 load();setInterval(loadTraces,15000);
 </script>

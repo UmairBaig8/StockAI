@@ -236,13 +236,15 @@ async fn signal_loop(
             }
         };
 
-        // SEBI: check 2FA is active before allowing execution
-        if let Some(ref r2fa) = redis_2fa {
-            if let Ok(mut conn) = r2fa.get_multiplexed_async_connection().await {
-                let active: Option<String> = redis::cmd("GET").arg("2fa:active").query_async(&mut conn).await.ok().flatten();
-                if active.is_none() {
-                    warn!("SEBI 2FA not active — rejecting {} signal for {}", signal.direction, signal.ticker);
-                    continue;
+        // SEBI: check 2FA is active before allowing execution (skip in paper/mock mode)
+        if !config.mock_mode {
+            if let Some(ref r2fa) = redis_2fa {
+                if let Ok(mut conn) = r2fa.get_multiplexed_async_connection().await {
+                    let active: Option<String> = redis::cmd("GET").arg("2fa:active").query_async(&mut conn).await.ok().flatten();
+                    if active.is_none() {
+                        warn!("SEBI 2FA not active — rejecting {} signal for {}", signal.direction, signal.ticker);
+                        continue;
+                    }
                 }
             }
         }

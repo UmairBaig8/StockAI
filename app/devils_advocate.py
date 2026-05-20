@@ -48,10 +48,10 @@ class DevilsAdvocate:
 
         try:
             data = self.llm.generate_json(
-                ADVOCATE_SYSTEM_PROMPT, user_prompt, temperature=0.5, max_tokens=768
+                ADVOCATE_SYSTEM_PROMPT, user_prompt, temperature=0.3, max_tokens=1024
             )
             logger.info(f"Advocate: {trade.get('ticker')} → {data.get('verdict')} (risk={data.get('risk_score')})")
             return data
         except Exception as e:
             logger.error(f"Devil's Advocate failed for {trade.get('ticker')}: {e}")
-            return {"verdict": "ALLOW", "confidence": 0.5, "risk_score": 50, "counter_arguments": ["Advocate unavailable"], "mitigation": "Proceed with caution", "summary": "Advocate service error — allowing trade with standard risk checks."}
+            return {"verdict": "BLOCK", "confidence": 0.9, "risk_score": 80, "counter_arguments": ["Advocate unavailable — API error"], "mitigation": "None — blocked due to advocate failure", "summary": f"Advocate service error — BLOCKing trade for safety. Error: {e}"}

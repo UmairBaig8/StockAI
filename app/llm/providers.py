@@ -57,28 +57,119 @@ class LLMAdapter(ABC):
             t = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         return t
 
+    @staticmethod
+    def _strip_reasoning(text: str) -> str:
+        """Strip deepseek-reasoner  response wrappers."""
+        import re
+        t = text.strip()
+        t = re.sub(r'<\s*think\s*>.*?<\s*/\s*think\s*>', '', t, flags=re.DOTALL)
+        t = re.sub(r'<\s*reasoning\s*>.*?<\s*/\s*reasoning\s*>', '', t, flags=re.DOTALL)
+        return t.strip()
+
+    @staticmethod
+    def _try_recover_json(text: str) -> str:
+        """Attempt to recover truncated/broken JSON."""
+        t = text.strip()
+        if not t:
+            return None
+        if t[0] not in ('{', '['):
+            return None
+        # close unterminated strings
+        in_str = False
+        escaped = False
+        result = []
+        for ch in t:
+            result.append(ch)
+            if escaped:
+                escaped = False
+                continue
+            if ch == '\\':
+                escaped = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+        reconstructed = ''.join(result)
+        # balance braces and brackets
+        brace_depth = 0
+        bracket_depth = 0
+        for ch in reconstructed:
+            if ch == '{':
+                brace_depth += 1
+            elif ch == '}':
+                brace_depth -= 1
+            elif ch == '[':
+                bracket_depth += 1
+            elif ch == ']':
+                bracket_depth -= 1
+        if in_str:
+            reconstructed += '"'
+        for _ in range(max(brace_depth, 0)):
+            reconstructed += '}'
+        for _ in range(max(bracket_depth, 0)):
+            reconstructed += ']'
+        return reconstructed
+
     def generate_json(
         self,
         system_prompt: str,
         user_prompt: str,
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        max_retries: int = 2,
     ) -> dict:
+        import re
+
         prompt_chars = len(system_prompt) + len(user_prompt)
-        t0 = time.monotonic()
-        try:
-            text = self.generate(system_prompt, user_prompt, temperature, max_tokens)
-            elapsed = (time.monotonic() - t0) * 1000
-            text = self._strip_code_fences(text)
-            result = json.loads(text)
-            _record_trace(self.agent_name, self.provider.value, self.model,
-                         prompt_chars, len(text), elapsed, True)
-            return result
-        except Exception as e:
-            elapsed = (time.monotonic() - t0) * 1000
-            _record_trace(self.agent_name, self.provider.value, self.model,
-                         prompt_chars, 0, elapsed, False, str(e))
-            raise
+        last_error = ""
+
+        for attempt in range(max_retries + 1):
+            t0 = time.monotonic()
+            try:
+                text = self.generate(
+                    system_prompt,
+                    user_prompt + ("\n\nRespond with valid JSON only. No markdown, no explanation." if attempt == 0 else ""),
+                    temperature=max(0.1, temperature - 0.1 * attempt),
+                    max_tokens=max_tokens,
+                )
+                elapsed = (time.monotonic() - t0) * 1000
+
+                if not text or not text.strip():
+                    last_error = "empty response from LLM"
+                    continue
+
+                text = self._strip_reasoning(text)
+                text = self._strip_code_fences(text).strip()
+
+                if not text:
+                    last_error = "empty after stripping reasoning/code fences"
+                    continue
+
+                try:
+                    result = json.loads(text)
+                except json.JSONDecodeError:
+                    recovered = self._try_recover_json(text)
+                    if recovered and recovered != text:
+                        try:
+                            result = json.loads(recovered)
+                        except json.JSONDecodeError as e2:
+                            last_error = str(e2)
+                            continue
+                    else:
+                        last_error = str(json.JSONDecodeError("", text[:80], 0))
+                        continue
+
+                _record_trace(self.agent_name, self.provider.value, self.model,
+                             prompt_chars, len(text), elapsed, True)
+                return result
+
+            except Exception as e:
+                elapsed = (time.monotonic() - t0) * 1000
+                last_error = str(e)
+
+        elapsed = (time.monotonic() - t0) * 1000 if 't0' in dir() else 0
+        _record_trace(self.agent_name, self.provider.value, self.model,
+                     prompt_chars, 0, elapsed, False, last_error)
+        raise ValueError(f"LLM failed after {max_retries + 1} attempts: {last_error}")
 
 
 class GeminiAdapter(LLMAdapter):
@@ -176,7 +267,11 @@ class DeepSeekAdapter(LLMAdapter):
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        return response.choices[0].message.content or ""
+        msg = response.choices[0].message
+        content = msg.content or ""
+        if not content and hasattr(msg, 'reasoning_content'):
+            content = msg.reasoning_content or ""
+        return content
 
 
 class BedrockAdapter(LLMAdapter):

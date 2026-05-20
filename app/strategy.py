@@ -387,8 +387,8 @@ class StrategyAgent:
         score += momentum * 2.0                     # momentum is key
         score += activity * 0.5                     # prefer active stocks
 
-        # Filter: skip dead/flat stocks
-        if activity < 0.3:
+        # Filter: skip dead/flat stocks (relaxed for forced picks)
+        if activity < 0.05:
             return -998
         if rsi > self.rsi_overbought:
             return -997  # overbought — don't buy

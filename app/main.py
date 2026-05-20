@@ -224,14 +224,15 @@ def create_app() -> FastAPI:
         from .dashboard_bridge import dashboard_bridge as db_bridge
         await ws.accept()
         db_bridge.add_client(ws)
-        logger.info(f"Dashboard client connected (total: {len(db_bridge.clients)})")
-        await db_bridge.send_initial(ws)
+        try:
+            await db_bridge.send_initial(ws)
+        except Exception:
+            pass
         try:
             while True:
                 await ws.receive_text()
         except WebSocketDisconnect:
             db_bridge.remove_client(ws)
-            logger.info(f"Dashboard client disconnected (total: {len(db_bridge.clients)})")
 
     @app.post("/orders")
     async def place_order(request: Request):

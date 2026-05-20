@@ -1,22 +1,11 @@
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
-
-
-def _check_sync(host: str, port: int) -> bool:
-    import socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(0.15)
-        result = s.connect_ex((host, port)) == 0
-        s.close()
-        return result
-    except Exception:
-        return False
 
 
 class DashboardBridge:
@@ -25,30 +14,40 @@ class DashboardBridge:
     def __init__(self):
         self.clients: list[WebSocket] = []
         self._dirty = False
-        self._broadcast_task: asyncio.Task | None = None
+        self._last_services: dict | None = None
+        self._last_services_time = 0.0
 
     def add_client(self, ws: WebSocket):
         self.clients.append(ws)
+        logger.info(f"Dashboard WS client connected (total: {len(self.clients)})")
 
     def remove_client(self, ws: WebSocket):
         if ws in self.clients:
             self.clients.remove(ws)
+            logger.info(f"Dashboard WS client disconnected (total: {len(self.clients)})")
 
     def mark_dirty(self):
-        """Called by event_store / wallet when state changes. Triggers broadcast."""
         self._dirty = True
 
     async def start_broadcast_loop(self):
-        """Background loop: pushes dashboard state to all clients when dirty, every 200ms max."""
+        """Background loop: pushes dashboard state to clients when dirty (max 200ms interval)."""
+        logger.info("Dashboard broadcast loop started")
         while True:
-            await asyncio.sleep(0.2)
-            if not self._dirty or not self.clients:
-                continue
-            self._dirty = False
-            await self._broadcast()
+            try:
+                await asyncio.sleep(0.2)
+                if not self._dirty or not self.clients:
+                    continue
+                self._dirty = False
+                await self._broadcast()
+            except Exception as e:
+                logger.error(f"Dashboard broadcast loop error: {e}")
 
     async def _broadcast(self):
-        state = await self._build_state()
+        try:
+            state = await self._build_state()
+        except Exception as e:
+            logger.error(f"Dashboard _build_state failed: {e}")
+            return
         payload = json.dumps(state)
         dead = []
         for ws in self.clients:
@@ -60,12 +59,13 @@ class DashboardBridge:
             self.remove_client(ws)
 
     async def send_initial(self, ws: WebSocket):
-        """Send full state to a newly connected client."""
-        state = await self._build_state()
+        """Send full state to a newly connected client. Never crashes the handler."""
         try:
+            state = await self._build_state()
             await ws.send_text(json.dumps(state))
-        except Exception:
-            pass
+            logger.info(f"Dashboard initial state sent to client")
+        except Exception as e:
+            logger.error(f"Dashboard send_initial failed: {e}")
 
     async def _build_state(self) -> dict:
         from .events import store as event_store
@@ -79,7 +79,6 @@ class DashboardBridge:
         wins = sum(1 for t in trades if t.pnl > 0)
         losses = sum(1 for t in trades if t.pnl <= 0)
 
-        # Merge with DB if in-memory is empty
         if total == 0:
             try:
                 from .db import get_summary
@@ -95,7 +94,7 @@ class DashboardBridge:
                 pass
 
         wallet = wallet_instance.snapshot()
-        services = await self._service_status_async()
+        services = await self._services_cached()
 
         return {
             "type": "dashboard",
@@ -117,20 +116,26 @@ class DashboardBridge:
             "services": services,
         }
 
-    async def _check_service_async(self, name: str, port: int) -> bool:
-        import os
-        hosts = [name, "localhost"] if os.getenv("DOCKER_MODE") else ["localhost"]
-        for host in hosts:
-            ok = await asyncio.to_thread(_check_sync, host, port)
-            if ok:
-                return True
-        return False
+    async def _services_cached(self) -> dict:
+        """Return cached service status (refreshed every 10s, avoids socket spam)."""
+        now = time.monotonic()
+        if self._last_services and (now - self._last_services_time) < 10:
+            return self._last_services
+        try:
+            svc = await self._check_services()
+        except Exception:
+            svc = self._last_services or _default_services()
+        self._last_services = svc
+        self._last_services_time = now
+        return svc
 
-    async def _service_status_async(self) -> dict:
+    async def _check_services(self) -> dict:
+        import os
+        docker = bool(os.getenv("DOCKER_MODE"))
         redis_ok, engine_ok, orch_ok = await asyncio.gather(
-            self._check_service_async("redis", 6379),
-            self._check_service_async("engine", 9001),
-            self._check_service_async("orchestrator", 8080),
+            asyncio.to_thread(_port_check, "redis" if docker else "localhost", 6379),
+            asyncio.to_thread(_port_check, "engine" if docker else "localhost", 9001),
+            asyncio.to_thread(_port_check, "orchestrator" if docker else "localhost", 8080),
             return_exceptions=True,
         )
         return {
@@ -140,6 +145,28 @@ class DashboardBridge:
             "orchestrator": {"online": bool(orchestrator_ok), "port": 8080},
             "llm": {"online": True, "provider": "active"},
         }
+
+
+def _port_check(host: str, port: int) -> bool:
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.3)
+        result = s.connect_ex((host, port)) == 0
+        s.close()
+        return result
+    except Exception:
+        return False
+
+
+def _default_services() -> dict:
+    return {
+        "memory": {"online": True, "port": 8000},
+        "redis": {"online": False, "port": 6379},
+        "engine": {"online": False, "port": 9001},
+        "orchestrator": {"online": False, "port": 8080},
+        "llm": {"online": True, "provider": "active"},
+    }
 
 
 dashboard_bridge = DashboardBridge()

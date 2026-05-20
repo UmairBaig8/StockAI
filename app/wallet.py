@@ -140,7 +140,8 @@ wallet = Wallet()
 
 def _notify_dashboard():
     try:
-        from .dashboard_bridge import dashboard_bridge
-        dashboard_bridge.mark_dirty()
+        from .dashboard_bridge import dashboard_bridge as db_b, wallet_bridge as wb
+        db_b.mark_dirty()
+        wb.mark_dirty()
     except Exception:
         pass

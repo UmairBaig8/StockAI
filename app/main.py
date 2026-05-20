@@ -95,13 +95,15 @@ def render_page(template_name: str, title: str, active: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from .wallet import wallet as w
-    from .dashboard_bridge import dashboard_bridge
+    from .dashboard_bridge import services_bridge, dashboard_bridge, wallet_bridge
     await w.load_from_db()
     asyncio.create_task(bridge.start())
     asyncio.create_task(strategy.run())
     asyncio.create_task(start_news_poller(900))
-    asyncio.create_task(options_poller(1800))  # Options every 30 min
-    asyncio.create_task(dashboard_bridge.start_broadcast_loop())
+    asyncio.create_task(options_poller(1800))
+    asyncio.create_task(services_bridge.run())
+    asyncio.create_task(dashboard_bridge.run())
+    asyncio.create_task(wallet_bridge.run())
     logger.info("StockAI Memory Service ready (market + strategy + news + critic + memory)")
     yield
     bridge.stop()
@@ -219,20 +221,45 @@ def create_app() -> FastAPI:
             bridge.remove_client(ws)
             logger.info(f"Market data client disconnected (total: {len(bridge.clients)})")
 
+async def _ws_listen(ws: WebSocket, bridge, name: str):
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        bridge.remove(ws)
+        logger.info(f"WS {name} client disconnected (total: {len(bridge.clients)})")
+
+
+async def _ws_handler(ws: WebSocket, bridge, name: str):
+    try:
+        await bridge.send_initial(ws)
+    except Exception:
+        pass
+    await _ws_listen(ws, bridge, name)
+
+
     @app.websocket("/ws/dashboard")
     async def dashboard_ws(ws: WebSocket):
-        from .dashboard_bridge import dashboard_bridge as db_bridge
+        from .dashboard_bridge import dashboard_bridge as b
         await ws.accept()
-        db_bridge.add_client(ws)
-        try:
-            await db_bridge.send_initial(ws)
-        except Exception:
-            pass
-        try:
-            while True:
-                await ws.receive_text()
-        except WebSocketDisconnect:
-            db_bridge.remove_client(ws)
+        b.add(ws)
+        await _ws_handler(ws, b, "dashboard")
+
+    @app.websocket("/ws/services")
+    async def services_ws(ws: WebSocket):
+        from .dashboard_bridge import services_bridge as b
+        await ws.accept()
+        b.add(ws)
+        await b.send_initial(ws)
+        await _ws_listen(ws, b, "services")
+
+    @app.websocket("/ws/wallet")
+    async def wallet_ws(ws: WebSocket):
+        from .dashboard_bridge import wallet_bridge as b
+        await ws.accept()
+        b.add(ws)
+        await b.send_initial(ws)
+        await _ws_listen(ws, b, "wallet")
 
     @app.post("/orders")
     async def place_order(request: Request):

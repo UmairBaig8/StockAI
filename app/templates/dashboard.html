@@ -90,120 +90,100 @@ setInterval(()=>$('clock').textContent='IST '+ts(),1000);
 let eqData = [];
 let mkt = {};
 
-// ── Dashboard WebSocket (push) — single connection, no duplicates ──
-let _dws = null, _dwTimer = null, _dwPoll = null;
-
-function connectDashboard() {
-  // Prevent duplicates: skip if already open or connecting
-  if (_dws && (_dws.readyState === WebSocket.OPEN || _dws.readyState === WebSocket.CONNECTING)) return;
-  // Clean up any pending reconnect timer
-  if (_dwTimer) { clearTimeout(_dwTimer); _dwTimer = null; }
-  // Stop fallback polling when WS connects
-  if (_dwPoll) { clearTimeout(_dwPoll); _dwPoll = null; }
-
+// ── Generic WebSocket connector (no duplicates, auto-reconnect) ──
+function connectWS(path, onMsg) {
+  let ws = null, timer = null;
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  _dws = new WebSocket(`${scheme}://${location.host}/ws/dashboard`);
+  const url = `${scheme}://${location.host}${path}`;
 
-  _dws.onmessage = e => {
-    try { const all = JSON.parse(e.data); if (all.type === 'dashboard') renderDashboard(all); }
-    catch(ex) {}
-  };
-
-  _dws.onclose = () => {
-    // Prevent double-fire: onerror→close→onclose would fire twice without this
-    if (!_dws) return;
-    _dws.onclose = null; _dws.onmessage = null; _dws = null;
-    // Single reconnect timer — never duplicate
-    if (!_dwTimer) _dwTimer = setTimeout(connectDashboard, 3000);
-    // Start HTTP fallback polling while WS is down
-    if (!_dwPoll) { pollFallback(); _dwPoll = setInterval(pollFallback, 4000); }
-  };
-
-  _dws.onerror = () => {}; // onclose always follows — don't call close() here
-}
-
-// HTTP fallback when WebSocket can't connect
-async function pollFallback() {
-  if (_dws && _dws.readyState === WebSocket.OPEN) {
-    if (_dwPoll) { clearInterval(_dwPoll); _dwPoll = null; }
-    return;
+  function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    if (timer) { clearTimeout(timer); timer = null; }
+    ws = new WebSocket(url);
+    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch(ex) {} };
+    ws.onclose = () => {
+      if (!ws) return;
+      ws.onclose = null; ws.onmessage = null; ws = null;
+      if (!timer) timer = setTimeout(connect, 3000);
+    };
+    ws.onerror = () => {};
   }
-  try { const r = await fetch('/api/v1/dash/all'); const all = await r.json(); renderDashboard(all); }
-  catch(e) {}
+
+  connect();
+  return () => { if (ws) { ws.onclose = null; ws.close(); ws = null; } if (timer) clearTimeout(timer); };
 }
 
-// Clean up on page unload
-window.addEventListener('beforeunload', () => {
-  if (_dwTimer) clearTimeout(_dwTimer);
-  if (_dwPoll) clearInterval(_dwPoll);
-  if (_dws) { _dws.onclose = null; _dws.close(); _dws = null; }
+// ── 1. Services WS (pushes every 5s from server) ──
+const closeServices = connectWS('/ws/services', d => {
+  if (d.type !== 'services') return;
+  const svc = d.services;
+  const map = {mem:'memory',eng:'engine',orch:'orchestrator',rdb:'redis',llm:'llm'};
+  Object.entries(map).forEach(([id,key]) => {
+    const el = document.getElementById('dot-'+id);
+    if (el) el.className = 'dot ' + (svc[key]?.online ? 'online' : 'offline');
+  });
 });
 
-function renderDashboard(all){
-  // Services
-  const svc = all.services;
-  const map = {mem:'memory',eng:'engine',orch:'orchestrator',rdb:'redis',llm:'llm'};
-  Object.entries(map).forEach(([id,key])=>{
-    const ok = svc[key]?.online;
-    const el = $('dot-'+id);
-    if(el) el.className = 'dot ' + (ok?'online':'offline');
-  });
-
-  // Equity + trades
-  const dash = all.dash || all;
-  const pnl = dash.summary?.pnl || 0;
-  const pnlPct = dash.summary?.pnl_percent || 0;
-  const inv = dash.summary?.invested || 0;
+// ── 2. Dashboard WS (trades + equity + events — pushes on trade/event) ──
+const closeDashboard = connectWS('/ws/dashboard', d => {
+  if (d.type !== 'dashboard') return;
+  const dash = d.dash || d;
+  const s = dash.summary || {};
+  const pnl = s.pnl || 0, pnlPct = s.pnl_percent || 0, inv = s.invested || 0;
   const total = inv + pnl;
-  $('eq-pnl').textContent = '₹' + total.toLocaleString('en-IN',{maximumFractionDigits:0});
-  $('eq-pnl').style.color = pnl >= 0 ? 'var(--accent)' : 'var(--err)';
-  $('eq-pnl-pct').textContent = (pnlPct>=0?'+':'') + pnlPct.toFixed(2) + '%';
-  $('eq-pnl-pct').style.color = pnlPct >= 0 ? 'var(--accent)' : 'var(--err)';
-  eqData.push({t:Date.now(),v:total});
-  if(eqData.length > 200) eqData.shift();
+  document.getElementById('eq-pnl').textContent = '₹' + total.toLocaleString('en-IN',{maximumFractionDigits:0});
+  document.getElementById('eq-pnl').style.color = pnl >= 0 ? 'var(--accent)' : 'var(--err)';
+  document.getElementById('eq-pnl-pct').textContent = (pnlPct>=0?'+':'') + pnlPct.toFixed(2) + '%';
+  document.getElementById('eq-pnl-pct').style.color = pnlPct >= 0 ? 'var(--accent)' : 'var(--err)';
+  eqData.push({t:Date.now(),v:total}); if(eqData.length>200) eqData.shift();
   drawEquity();
 
-  const tb = $('trades-body');
-  if(dash.trades?.length) tb.innerHTML = dash.trades.slice(0,8).map(t =>
+  const tb = document.getElementById('trades-body');
+  if (dash.trades?.length) tb.innerHTML = dash.trades.slice(0,8).map(t =>
     `<tr><td>${fmtT(t.time)}</td><td>${t.ticker}</td><td>${t.dir.slice(0,1)}</td><td>${t.qty||0}</td><td>${(t.entry_price||0).toFixed(0)}</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">${(t.pnl>0?'+':'')+t.pnl.toFixed(2)}%</td></tr>`
   ).join('');
 
-  // Signal strip
   const last = dash.events?.find(e => e.msg.includes('BUY')||e.msg.includes('SELL')||e.msg.includes('best pick')||e.msg.includes('rotate'));
-  if(last){
+  if (last) {
     const isBuy = last.msg.includes('BUY'), isSell = last.msg.includes('SELL');
-    $('signal-strip').innerHTML = `<span class="dot ${isBuy?'buy':isSell?'sell':'idle'}"></span><span id="signal-text">${last.msg}</span>`;
+    document.getElementById('signal-strip').innerHTML = `<span class="dot ${isBuy?'buy':isSell?'sell':'idle'}"></span><span id="signal-text">${last.msg}</span>`;
   }
+});
 
-  // Wallet
-  const wallet = all.wallet;
-  if(wallet){
-    const cap = wallet.initial_capital || 100000;
-    const winv = wallet.invested || 0;
-    const avail = wallet.available || cap;
-    const wpnl = wallet.realized_pnl || wallet.total_pnl || 0;
-    $('w-capital').textContent = '₹' + cap.toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-invested').textContent = '₹' + winv.toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-available').textContent = '₹' + avail.toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-pnl').textContent = (wpnl>=0?'+':'') + '₹' + Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});
-    $('w-pnl').className = 'val ' + (wpnl>=0?'green':'red');
-    const keys = Object.keys(wallet.positions || {});
-    if(!keys.length) $('positions-row').innerHTML = '<div style="color:var(--muted);font-size:0.65rem">No open positions</div>';
-    else {
-      $('positions-row').innerHTML = keys.map(t => {
-        const p = wallet.positions[t], m = mkt[t], cur = m?.last_price || p.avg_price;
-        const pnlPct = ((cur-p.avg_price)/p.avg_price*100);
-        const color = pnlPct>=0 ? 'var(--accent)' : 'var(--err)';
-        return `<div class="pos-card"><span class="tkr">${t}</span><span class="entry">@₹${p.avg_price.toFixed(0)} → ₹${cur.toFixed(0)}</span><span class="pnl" style="color:${color}">${(pnlPct>=0?'+':'')+pnlPct.toFixed(2)}%</span><span class="age">Qty: ${p.qty}</span></div>`;
-      }).join('');
-    }
+// ── 3. Wallet WS (positions + P&L — pushes on change) ──
+const closeWallet = connectWS('/ws/wallet', d => {
+  if (d.type !== 'wallet') return;
+  const w = d.wallet;
+  if (!w) return;
+  const cap = w.initial_capital || 100000;
+  const winv = w.invested || 0;
+  const avail = w.available || cap;
+  const wpnl = w.realized_pnl || w.total_pnl || 0;
+  document.getElementById('w-capital').textContent = '₹' + cap.toLocaleString('en-IN',{maximumFractionDigits:0});
+  document.getElementById('w-invested').textContent = '₹' + winv.toLocaleString('en-IN',{maximumFractionDigits:0});
+  document.getElementById('w-available').textContent = '₹' + avail.toLocaleString('en-IN',{maximumFractionDigits:0});
+  document.getElementById('w-pnl').textContent = (wpnl>=0?'+':'') + '₹' + Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});
+  document.getElementById('w-pnl').className = 'val ' + (wpnl>=0?'green':'red');
+
+  const keys = Object.keys(w.positions || {});
+  const row = document.getElementById('positions-row');
+  if (!keys.length) row.innerHTML = '<div style="color:var(--muted);font-size:0.65rem">No open positions</div>';
+  else {
+    row.innerHTML = keys.map(t => {
+      const p = w.positions[t], m = mkt[t], cur = m?.last_price || p.avg_price;
+      const pp = ((cur-p.avg_price)/p.avg_price*100);
+      const color = pp>=0 ? 'var(--accent)' : 'var(--err)';
+      return `<div class="pos-card"><span class="tkr">${t}</span><span class="entry">@₹${p.avg_price.toFixed(0)} → ₹${cur.toFixed(0)}</span><span class="pnl" style="color:${color}">${(pp>=0?'+':'')+pp.toFixed(2)}%</span><span class="age">Qty: ${p.qty}</span></div>`;
+    }).join('');
   }
-}
-connectDashboard();
+});
+
+// ── Cleanup on page leave ──
+window.addEventListener('beforeunload', () => { closeServices(); closeDashboard(); closeWallet(); });
 
 function drawEquity(){
   if(eqData.length<2)return;
-  const svg=$('eq-svg');const w=svg.clientWidth||400;const h=80;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  const svg=document.getElementById('eq-svg');const w=svg.clientWidth||400;const h=80;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
   const vals=eqData.map(d=>d.v);const min=Math.min(...vals);const max=Math.max(...vals);const range=max-min||1;
   const pts=eqData.map((d,i)=>`${i/(eqData.length-1)*w},${h-(d.v-min)/range*h}`).join(' ');
   svg.innerHTML=`<polyline fill="none" stroke="${eqData[eqData.length-1].v>=eqData[0].v?'#00ff88':'#ff4444'}" stroke-width="1.5" points="${pts}"/>`;

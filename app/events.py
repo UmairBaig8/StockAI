@@ -35,8 +35,8 @@ class EventStore:
 
 def _notify_dashboard():
     try:
-        from .dashboard_bridge import dashboard_bridge
-        dashboard_bridge.mark_dirty()
+        from .dashboard_bridge import dashboard_bridge as b
+        b.mark_dirty()
     except Exception:
         pass
 

@@ -13,7 +13,7 @@
             <span><span class="dot unknown" id="dot-llm"></span><span class="lbl">LLM</span></span>
           </div>
           <span class="badge" id="clock">--</span>
-          <span style="font-size:0.55rem;color:var(--muted)">LIVE</span>
+          <span id="mkt-status" style="font-size:0.55rem;display:flex;align-items:center;gap:4px"><span class="dot offline" id="mkt-dot"></span><span id="mkt-label">...</span></span>
         </div>
       </header>
 
@@ -86,6 +86,17 @@ const $ = s => document.getElementById(s);
 const ts = () => new Date().toLocaleTimeString('en-IN',{hour12:false,timeZone:'Asia/Kolkata'});
 const fmtT = t => t?t.split('T')[1]?.split('.')[0]?.slice(0,5):'--';
 setInterval(()=>$('clock').textContent='IST '+ts(),1000);
+
+// ── Market hours indicator ──
+(function(){
+  const now=new Date();
+  const ist=new Date(now.toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+  const h=ist.getHours(),m=ist.getMinutes(),d=ist.getDay();
+  const open=h*60+m>=555&&h*60+m<930&&d>=1&&d<=5;
+  const dot=$('mkt-dot'),lbl=$('mkt-label');
+  if(dot)dot.className='dot '+(open?'online':'offline');
+  if(lbl)lbl.textContent=open?'NSE OPEN':'NSE CLOSED';
+})();
 
 let eqData = [];
 let mkt = {};

@@ -304,32 +304,32 @@ class StrategyAgent:
         return {"blocked": False, "by": ""}
 
     async def _pick_best_trade(self, open_count: int):
-        """Pick the highest-scoring opportunity across all tickers."""
+        """Pick the highest-scoring opportunity across all tickers. Tries top-3."""
         now = asyncio.get_event_loop().time()
 
         if open_count < self.max_positions:
-            # Find best BUY candidate
-            best_score, best_ticker, best_price = -999, None, 0.0
+            # Score all eligible tickers
+            candidates = []
             for ticker, prices in self.price_history.items():
                 if ticker in wallet_instance.positions:
                     continue
                 if len(prices) < self.rsi_period:
                     continue
                 score = self._score_ticker(ticker, list(prices))
-                if score > best_score:
-                    best_score, best_ticker = score, ticker
-                    best_price = prices[-1]
+                if score > -500 and prices[-1] > 0:
+                    candidates.append((score, ticker, prices[-1]))
+            candidates.sort(key=lambda x: x[0], reverse=True)
 
-            if best_ticker and best_price > 0 and best_score > -500:
-                # Pre-trade safety checks — all 5 guards run in parallel
+            # Try top-3 candidates until one passes pre-trade checks
+            for _, best_ticker, best_price in candidates[:3]:
                 check = await self._run_pre_trade_checks(best_ticker, "BUY", 0, best_price, "forced-best-pick", self._calc_rsi(list(self.price_history[best_ticker])))
                 if check["blocked"]:
-                    return
+                    continue  # try next ticker
 
                 notional = wallet_instance.available * (self.max_position_pct / 100)
                 qty = max(1, int(notional / best_price))
                 rsi = self._calc_rsi(list(self.price_history[best_ticker]))
-                reason = f"Best opportunity RSI={rsi:.0f} score={best_score:.1f}"
+                reason = f"Best opportunity RSI={rsi:.0f} score={candidates[0][0]:.1f}"
                 await self._publish_trade({
                     "ticker": best_ticker, "exchange": "NSE", "direction": "BUY",
                     "quantity": qty, "price": best_price,
@@ -337,6 +337,9 @@ class StrategyAgent:
                 })
                 self._last_forced_trade = now
                 logger.info(f"Strategy: {best_ticker} BUY (best pick) qty={qty} @ {best_price:.2f} — {reason}")
+                return
+
+            logger.info("Strategy: forced BUY — all top-3 candidates blocked by guards")
         elif self._is_market_open():
             # Max positions — sell the weakest held position
             worst_score, worst_ticker, worst_price = 999, None, 0.0

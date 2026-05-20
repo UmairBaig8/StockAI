@@ -90,6 +90,46 @@ setInterval(()=>$('clock').textContent='IST '+ts(),1000);
 let eqData = [];
 let mkt = {};
 
+// ── Initial data fetch (instant, no WS wait) ──
+(async function loadInitial(){
+  try{
+    const r=await fetch('/api/v1/dash/all');
+    const d=await r.json();
+    // Dashboard
+    const dash=d.dash||{}, s=dash.summary||{};
+    const pnl=s.pnl||0, pnlPct=s.pnl_percent||0, inv=s.invested||0;
+    const total=inv+pnl;
+    const eqPnlEl=document.getElementById('eq-pnl');
+    if(eqPnlEl){eqPnlEl.textContent='₹'+total.toLocaleString('en-IN',{maximumFractionDigits:0});eqPnlEl.style.color=pnl>=0?'var(--accent)':'var(--err)';}
+    const eqPctEl=document.getElementById('eq-pnl-pct');
+    if(eqPctEl){eqPctEl.textContent=(pnlPct>=0?'+':'')+pnlPct.toFixed(2)+'%';eqPctEl.style.color=pnlPct>=0?'var(--accent)':'var(--err)';}
+    if(dash.trades?.length){
+      document.getElementById('trades-body').innerHTML=dash.trades.slice(0,8).map(t=>
+        `<tr><td>${fmtT(t.time)}</td><td>${t.ticker}</td><td>${t.dir.slice(0,1)}</td><td>${t.qty||0}</td><td>${(t.entry_price||0).toFixed(0)}</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">${(t.pnl>0?'+':'')+t.pnl.toFixed(2)}%</td></tr>`
+      ).join('');
+    }
+    // Wallet
+    const w=d.wallet||{};
+    if(w.initial_capital){
+      const cap=w.initial_capital||100000,winv=w.invested||0,avail=w.available||cap,wpnl=w.realized_pnl||w.total_pnl||0;
+      const wc=document.getElementById('w-capital');if(wc)wc.textContent='₹'+cap.toLocaleString('en-IN',{maximumFractionDigits:0});
+      const wi=document.getElementById('w-invested');if(wi)wi.textContent='₹'+winv.toLocaleString('en-IN',{maximumFractionDigits:0});
+      const wa=document.getElementById('w-available');if(wa)wa.textContent='₹'+avail.toLocaleString('en-IN',{maximumFractionDigits:0});
+      const wp=document.getElementById('w-pnl');if(wp){wp.textContent=(wpnl>=0?'+':'')+'₹'+Math.abs(wpnl).toLocaleString('en-IN',{maximumFractionDigits:0});wp.className='val '+(wpnl>=0?'green':'red');}
+      const keys=Object.keys(w.positions||{});
+      const pr=document.getElementById('positions-row');
+      if(pr){
+        if(!keys.length)pr.innerHTML='<div style="color:var(--muted);font-size:0.65rem">No open positions</div>';
+        else pr.innerHTML=keys.map(t=>{const p=w.positions[t];return `<div class="pos-card"><span class="tkr">${t}</span><span class="entry">@₹${p.avg_price.toFixed(0)}</span><span class="pnl" style="color:var(--muted)">Qty: ${p.qty}</span></div>`;}).join('');
+      }
+    }
+    // Services
+    const svc=d.services||{};
+    const map={mem:'memory',eng:'engine',orch:'orchestrator',rdb:'redis',llm:'llm'};
+    Object.entries(map).forEach(([id,key])=>{const el=document.getElementById('dot-'+id);if(el)el.className='dot '+(svc[key]?.online?'online':'offline');});
+  }catch(e){}
+})();
+
 // ── Generic WebSocket connector (no duplicates, auto-reconnect) ──
 function connectWS(path, onMsg) {
   let ws = null, timer = null;

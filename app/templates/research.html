@@ -39,12 +39,18 @@ async function analyze(ticker){
 
   document.getElementById('results').innerHTML='<div class="loading">Analyzing '+ticker+'...</div>';
   try{
-    const[ind,news,opt]=await Promise.all([
-      fetch('/api/v1/indicators/'+ticker).then(r=>r.json()),
-      fetch('/api/v1/news?ticker='+ticker).then(r=>r.json()),
-      fetch('/api/v1/options/'+ticker).then(r=>r.json()),
+    const results=await Promise.allSettled([
+      fetch('/api/v1/indicators/'+ticker).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
+      fetch('/api/v1/news?ticker='+ticker).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
+      fetch('/api/v1/options/'+ticker).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
     ]);
+    const ind=results[0].status==='fulfilled'?results[0].value:{error:'Indicators unavailable'};
+    const news=results[1].status==='fulfilled'?results[1].value:{items:[]};
+    const opt=results[2].status==='fulfilled'?results[2].value:{};
+    if(ind.error&&!ind.price){document.getElementById('results').innerHTML='<div class="loading">⚠ '+ind.error+' (need more price data)</div>';return}
     render(ticker,ind,news,opt);
+    const errs=results.filter(r=>r.status==='rejected').map(r=>r.reason.message);
+    if(errs.length){document.getElementById('results').innerHTML+='<div class="loading" style="margin-top:8px;font-size:0.75rem">⚠ Partial data: '+errs.join(', ')+'</div>'}
   }catch(e){document.getElementById('results').innerHTML='<div class="loading">Error: '+e.message+'</div>'}
   if(loadingChip){loadingChip.classList.remove('loading');loadingChip=null}
 }
@@ -63,7 +69,8 @@ function render(ticker,ind,news,opt){
   const pcr=opt.pcr||opt.market_pcr?.pcr;const sent=opt.sentiment||opt.market_pcr?.sentiment||'neutral';
   const reg=ind.regime||{};const mtf=ind.rsi_mtf||{};const macd=ind.macd||{};const bb=ind.bb||{};
   let newsHtml='';if(news.items?.length){newsHtml='<div class="section"><b>News:</b><br>'+news.items.slice(0,3).map(i=>'· '+i.title).join('<br>')+'</div>'}
-  let optionsHtml='';if(pcr!=null){optionsHtml='<div class="section"><b>Options PCR:</b> '+pcr+' <span class="tag '+sent+'">'+sent.toUpperCase()+'</span></div>'}
+  let optionsHtml='';if(pcr!=null&&opt.status!=='no_data'){optionsHtml='<div class="section"><b>Options PCR:</b> '+pcr+' <span class="tag '+sent+'">'+sent.toUpperCase()+'</span></div>'}
+  else if(!pcr&&opt.status!=='no_data'){optionsHtml='<div class="section muted"><b>Options:</b> No data (NSE may be closed)</div>'}
   document.getElementById('results').innerHTML=`
     <div class="card"><h3>${ticker} @ ₹${ind.price||'--'}</h3>
       <div class="metric-row">

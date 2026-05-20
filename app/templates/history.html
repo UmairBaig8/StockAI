@@ -83,7 +83,7 @@ function renderTable(){
         return `<span style="color:${c}">${val}</span>`;
       }
       if(key==='dir'){
-        const cls=t.dir==='BUY'?'tag green':'tag red';
+        const cls=row.dir==='BUY'?'tag green':'tag red';
         return `<span class="${cls}">${val}</span>`;
       }
       return val;

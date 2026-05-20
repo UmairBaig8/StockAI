@@ -637,6 +637,7 @@ async def optimize_strategy(
 async def _run_optimizer(recent: list, current_params: dict, days: int):
     from .optimizer import OptimizerAgent
     from .config import get_settings
+    from .optimizer_bridge import optimizer_bridge
 
     settings = get_settings()
     agent = OptimizerAgent(settings)
@@ -654,9 +655,11 @@ async def _run_optimizer(recent: list, current_params: dict, days: int):
                     "status": "pending",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
+        optimizer_bridge.push(result)
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f"Background optimizer failed: {e}")
+        optimizer_bridge.push({"analysis": {"main_issue": f"Error: {str(e)}"}, "suggestions": [], "confidence": 0})
 
 
 # === Recommendations (approve/reject optimizer suggestions) ===

@@ -1,5 +1,6 @@
 import asyncio
 import gzip
+import json
 import logging
 import re
 from functools import lru_cache
@@ -275,6 +276,19 @@ def create_app() -> FastAPI:
         b.add(ws)
         await b.send_initial(ws)
         await _ws_listen(ws, b, "wallet")
+
+    @app.websocket("/ws/optimizer")
+    async def optimizer_ws(ws: WebSocket):
+        from .optimizer_bridge import optimizer_bridge as b
+        await ws.accept()
+        b.add(ws)
+        if b.last_result:
+            await ws.send_text(json.dumps({"type": "optimizer", "result": b.last_result}))
+        try:
+            while True:
+                await ws.receive_text()
+        except WebSocketDisconnect:
+            b.remove(ws)
 
     @app.post("/orders")
     async def place_order(request: Request):

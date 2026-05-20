@@ -399,23 +399,25 @@ function renderWatch(){
   }).join('');
 }
 
-// ── Optimizer ──
+// ── Optimizer via WebSocket ──
 let recs=[];
-async function pollOptimizer(){
-  try{const r=await fetch('/api/v1/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:7})});const d=await r.json();
-    const opt=d.optimization;if(!opt?.suggestions?.length){$('optimizer-body').innerHTML='<span style="color:var(--muted);font-size:0.7rem">No recommendations yet. Run optimizer.</span>';return}
-    recs=opt.suggestions.map((s,i)=>({...s,idx:i,status:s.status||'pending'}));
-    renderRecs();
-  }catch(e){$('optimizer-body').innerHTML='<span style="color:var(--err)">Optimizer unavailable</span>'}
-}
+let optTriggered=false;
+
 function renderRecs(){
   const el=$('optimizer-body');
   if(!recs.length){el.innerHTML='<span style="color:var(--muted)">No recommendations</span>';return}
   el.innerHTML=recs.map((s,i)=>{
     const badge=s.status==='approved'?'<span style="color:var(--accent);font-size:0.55rem">✓ Approved</span>':s.status==='rejected'?'<span style="color:var(--err);font-size:0.55rem">✗ Rejected</span>':'';
     return `<div class="opt-card" id="rec-${i}"><div class="suggestion">${s.parameter}: ${s.current} → <b>${s.suggested}</b> ${badge}</div><div class="meta">${s.reason}</div><div style="margin-top:4px">${s.status==='pending'?`<button class="btn-sm primary" onclick="approveRec(${i})">Approve</button> <button class="btn-sm danger" onclick="rejectRec(${i})">Reject</button>`:`<button class="btn-sm" style="color:var(--muted)" disabled>${s.status}</button>`}</div></div>`}).join('')
-    +`<div style="margin-top:8px;display:flex;gap:6px">${recs.some(r=>r.status==='pending')?`<button class="btn-sm primary" onclick="approveAll()">Approve All</button><button class="btn-sm danger" onclick="rejectAll()">Reject All</button>`:''}<button class="btn-sm" onclick="pollOptimizer()">⟳ Refresh</button></div>`;
+    +`<div style="margin-top:8px;display:flex;gap:6px">${recs.some(r=>r.status==='pending')?`<button class="btn-sm primary" onclick="approveAll()">Approve All</button><button class="btn-sm danger" onclick="rejectAll()">Reject All</button>`:''}<button class="btn-sm" onclick="triggerOptimizer()">⟳ Re-run</button></div>`;
 }
+
+function triggerOptimizer(){
+  optTriggered=true;
+  $('optimizer-body').innerHTML='<span style="color:var(--muted);font-size:0.7rem">Analyzing trades... results will appear shortly</span>';
+  fetch('/api/v1/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:7})}).catch(()=>{});
+}
+
 async function approveRec(i){
   try{const r=await fetch('/api/v1/recommendations/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})});const d=await r.json();
     if(d.ok){recs[i].status='approved';renderRecs()}
@@ -433,6 +435,22 @@ async function approveAll(){
 }
 function rejectAll(){recs.forEach(r=>{if(r.status==='pending')r.status='rejected'});renderRecs()}
 
-// ── Poll cycle (WebSocket pushes live data; only optimizer polls) ──
-setInterval(pollOptimizer,3600000);pollOptimizer(); // hourly
+// ── Optimizer WS (pushes results when background task completes) ──
+(function(){
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${scheme}://${location.host}/ws/optimizer`);
+  ws.onmessage = e => {
+    try{
+      const d=JSON.parse(e.data);
+      if(d.type==='optimizer'&&d.result?.suggestions?.length){
+        recs=d.result.suggestions.map((s,i)=>({...s,idx:i,status:s.status||'pending'}));
+        renderRecs();
+        showToast('Optimizer analysis complete — '+recs.length+' recommendation(s)', 'success', 5000);
+      }
+    }catch(ex){}
+  };
+})();
+
+// ── Trigger optimizer on load ──
+triggerOptimizer();
 </script>

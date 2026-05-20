@@ -4,6 +4,7 @@
 # Go
 bin/
 *.exe
+orchestrator
 
 # Rust
 execution/target/

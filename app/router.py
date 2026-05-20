@@ -373,6 +373,16 @@ async def save_settings(data: dict):
     return {"ok": True, "settings": cfg}
 
 
+# === Watchlist ===
+
+@router.get("/watchlist", response_model=dict)
+async def get_watchlist():
+    from .market_data import NSE_TICKERS
+    return {
+        "tickers": [t.replace(".NS", "").replace(".BO", "") for t in NSE_TICKERS]
+    }
+
+
 # === Ticker Discovery ===
 
 @router.post("/tickers/discover", response_model=dict)

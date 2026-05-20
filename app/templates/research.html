@@ -58,9 +58,10 @@ async function analyze(ticker){
 async function loadWatchlist(){
   const chips=document.getElementById('ticker-chips');
   try{
-    const r=await fetch('/api/v1/settings');
-    const cfg=await r.json();
-    const tickers=(cfg.tickers||'RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS').split(',').map(t=>t.trim().replace('.NS','')).filter(Boolean);
+    const r=await fetch('/api/v1/watchlist');
+    const data=await r.json();
+    const tickers=data.tickers||[];
+    if(!tickers.length){chips.innerHTML='<span class="muted">No active tickers</span>';return}
     chips.innerHTML=tickers.map(t=>`<div class="ticker-chip" data-ticker="${t}" onclick="analyze('${t}')">${t}</div>`).join('');
   }catch(e){chips.innerHTML='<span class="muted">Could not load watchlist</span>'}
 }

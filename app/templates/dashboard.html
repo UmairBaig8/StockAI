@@ -251,9 +251,8 @@ let mkt = {};
         if(!keys.length)pr.innerHTML='<div class="pos-empty">No open positions</div>';
         else pr.innerHTML=keys.map(t=>{
           const p=w.positions[t];
-          const side=(p.side||'LONG').toUpperCase();
-          const fmtEntry='₹'+p.avg_price.toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:0});
-          return `<div class="pos-card neutral"><div class="pos-header"><span class="pos-tkr">${t}</span><span class="pos-badge ${side.toLowerCase()}">${side}</span></div><div class="pos-live"><div class="pos-ltp">${fmtEntry}</div><div class="pos-pnl neutral">0.00% (+₹0.00)</div></div><div class="pos-divider"></div><div class="pos-details"><div class="pos-detail"><span class="pos-detail-lbl">Avg. Entry</span><span class="pos-detail-val">${fmtEntry}</span></div><div class="pos-detail"><span class="pos-detail-lbl">Quantity</span><span class="pos-detail-val">${p.qty} Shares</span></div></div><div class="pos-sparkline" id="spark-${t}"></div></div>`;
+          const side=(p.side||'LONG').toLowerCase();
+          return `<div class="pos-card neutral"><div class="pos-header"><span class="tkr">${t}</span><span class="pos-badge ${side}">${side}</span></div><div class="pos-price-row"><span class="entry">@₹${p.avg_price.toFixed(0)}</span></div><div class="pnl-row"><span class="qty">Qty: ${p.qty}</span><span class="pnl" style="color:var(--muted)">—</span></div><div class="sparkline" id="spark-${t}"></div></div>`;
         }).join('');
       }
     }
@@ -338,16 +337,16 @@ let priceHistory = {};
 function drawSparkline(el, ticker) {
   const history = priceHistory[ticker] || [];
   if (history.length < 2) {
-    el.innerHTML = '<svg viewBox="0 0 100 32" preserveAspectRatio="none"><line x1="0" y1="16" x2="100" y2="16" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="2,3"/></svg>';
+    el.innerHTML = '<svg viewBox="0 0 100 28" preserveAspectRatio="none"><line x1="0" y1="14" x2="100" y2="14" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="2,3"/></svg>';
     return;
   }
   const vals = history.slice(-30);
   const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
   const isUp = vals[vals.length-1] >= vals[0];
   const color = isUp ? '#00ff88' : '#ff4d5e';
-  const pts = vals.map((v, i) => `${(i / (vals.length-1)) * 100},${32 - ((v - min) / range) * 28 - 2}`).join(' ');
-  const areaPts = `0,32 ${pts} 100,32`;
-  el.innerHTML = `<svg viewBox="0 0 100 32" preserveAspectRatio="none"><defs><linearGradient id="sg-${ticker}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity="0.18"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><polygon points="${areaPts}" fill="url(#sg-${ticker})"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.2" vector-effect="non-scaling-stroke"/></svg>`;
+  const pts = vals.map((v, i) => `${(i / (vals.length-1)) * 100},${28 - ((v - min) / range) * 24 - 2}`).join(' ');
+  const areaPts = `0,28 ${pts} 100,28`;
+  el.innerHTML = `<svg viewBox="0 0 100 28" preserveAspectRatio="none"><defs><linearGradient id="sg-${ticker}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity="0.18"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><polygon points="${areaPts}" fill="url(#sg-${ticker})"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.2" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
 function pushPrice(ticker, price) {
@@ -379,14 +378,11 @@ const closeWallet = connectWS('/ws/wallet', d => {
       const p = w.positions[t], m = mkt[t], cur = m?.last_price || p.avg_price;
       const pp = ((cur-p.avg_price)/p.avg_price*100);
       const pnlVal = ((cur-p.avg_price)*p.qty);
-      const state = pp > 0 ? 'profit' : pp < 0 ? 'loss' : 'neutral';
-      const side = (p.side||'LONG').toUpperCase();
-      const pnlClass = pp > 0 ? 'positive' : pp < 0 ? 'negative' : 'neutral';
-      const fmtCur = '₹'+cur.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
-      const fmtEntry = '₹'+p.avg_price.toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:0});
-      const fmtPnlVal = (pnlVal>=0?'+₹':'-₹')+Math.abs(pnlVal).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:0});
-      const fmtPnlPct = (pp>=0?'+':'')+pp.toFixed(2)+'%';
-      return `<div class="pos-card ${state}"><div class="pos-header"><span class="pos-tkr">${t}</span><span class="pos-badge ${side.toLowerCase()}">${side}</span></div><div class="pos-live"><div class="pos-ltp">${fmtCur}</div><div class="pos-pnl ${pnlClass}">${fmtPnlPct} (${fmtPnlVal})</div></div><div class="pos-divider"></div><div class="pos-details"><div class="pos-detail"><span class="pos-detail-lbl">Avg. Entry</span><span class="pos-detail-val">${fmtEntry}</span></div><div class="pos-detail"><span class="pos-detail-lbl">Quantity</span><span class="pos-detail-val">${p.qty} Shares</span></div></div><div class="pos-sparkline" id="spark-${t}"></div></div>`;
+      const state = pp>=0 ? 'profit' : 'loss';
+      const side = (p.side||'LONG').toLowerCase();
+      const pnlClass = pp>=0 ? 'positive' : 'negative';
+      const pnlSign = pp>=0 ? '+' : '';
+      return `<div class="pos-card ${state}"><div class="pos-header"><span class="tkr">${t}</span><span class="pos-badge ${side}">${side}</span></div><div class="pos-price-row"><span class="entry">Entry ₹${p.avg_price.toFixed(0)}</span><span class="current">₹${cur.toFixed(0)}</span></div><div class="pnl-row"><span class="qty">${p.qty} shares</span><span class="pnl ${pnlClass}">${pnlSign}${pp.toFixed(2)}% · ₹${pnlVal>=0?'+':''}${pnlVal.toFixed(0)}</span></div><div class="sparkline" id="spark-${t}"></div></div>`;
     }).join('');
     // Draw sparklines
     keys.forEach(t => {

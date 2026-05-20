@@ -107,19 +107,23 @@ class StrategyAgent:
         asyncio.create_task(self._listen_trade_results())
 
         while True:
-            await asyncio.sleep(15)
+            is_open = self._is_market_open()
+            await asyncio.sleep(15 if is_open else 300)
 
             # Heartbeat every 5 min — also check auto-discovery schedule
             now = asyncio.get_event_loop().time()
             if now - last_heartbeat > 300:
                 tickers = {t: f"n={len(p)}" for t, p in self.price_history.items()}
-                is_open = self._is_market_open()
                 logger.info(f"Strategy heartbeat: wallet=₹{wallet_instance.available:,.0f} positions={len(wallet_instance.positions)} market={'OPEN' if is_open else 'CLOSED'} data={tickers}")
                 last_heartbeat = now
 
                 # Auto-discovery at scheduled IST hours (9, 10, 11, 12, 13, 14)
                 if is_open:
                     await self._maybe_discover()
+
+            # Skip signal scanning when market is closed
+            if not is_open:
+                continue
 
             wallets = wallet_instance.snapshot()
             open_count = len(wallets.get("positions", {}))
@@ -243,8 +247,8 @@ class StrategyAgent:
                     self._position_entry_time.pop(ticker, None)
                 logger.info(f"Strategy: {ticker} {signal['direction']} qty={qty} @ {current:.2f} — {signal['reason']}")
 
-            # If no natural signal, pick best opportunity across all tickers
-            if not had_signal and self._loss_cooldown_until == 0.0:
+            # If no natural signal, pick best opportunity across all tickers (market hours only)
+            if not had_signal and self._loss_cooldown_until == 0.0 and self._is_market_open():
                 now = asyncio.get_event_loop().time()
                 if self.force_trade_sec > 0 and now - self._last_forced_trade > self.force_trade_sec:
                     await self._pick_best_trade(open_count)

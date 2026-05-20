@@ -64,7 +64,7 @@
 
 | Event | Time (IST) | Time (UTC) | Action |
 |-------|------------|------------|--------|
-| **Start** | 9:00 AM | 3:30 | Start EC2 → wait running → associate EIP |
+| **Start** | 8:30 AM | 3:00 | Start EC2 → wait running → associate EIP |
 | **Stop** | 3:30 PM | 10:00 | Snapshot EBS → stop EC2 → prune old snapshots |
 
 Days: **Mon-Fri only** (no weekend trading).

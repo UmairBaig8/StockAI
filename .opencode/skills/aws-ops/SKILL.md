@@ -17,7 +17,7 @@ Manage StockAI AWS infrastructure and Git workflow: deploy, update, start/stop, 
 | **Elastic IP** | `52.70.58.6` (static) |
 | **Region** | `us-east-1` |
 | **Key Pair** | `stockai-key.pem` (repo root) |
-| **Scheduler** | Mon-Fri 9:00 AM - 3:30 PM IST (auto) |
+| **Scheduler** | Mon-Fri 8:30 AM - 3:30 PM IST (auto) |
 
 ## Workflows
 

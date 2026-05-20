@@ -168,7 +168,7 @@ bash aws-update.sh
 
 | Event | Time (IST) | Action |
 |-------|------------|--------|
-| **Start** | 9:00 AM Mon-Fri | EC2 start + Elastic IP associate |
+| **Start** | 8:30 AM Mon-Fri | EC2 start + Elastic IP associate |
 | **Stop** | 3:30 PM Mon-Fri | EBS snapshot → EC2 stop |
 
 ### Cost Breakdown

@@ -177,7 +177,7 @@ Resources:
     Properties:
       Name: stockai-start-schedule
       Description: Start StockAI EC2 instance daily
-      ScheduleExpression: !Sub 'cron(30 ${StartHourUTC} ? * MON-FRI *)'
+      ScheduleExpression: !Sub 'cron(0 ${StartHourUTC} ? * MON-FRI *)'
       State: ENABLED
       Targets:
         - Arn: !GetAtt StockAiSchedulerFunction.Arn
@@ -189,7 +189,7 @@ Resources:
     Properties:
       Name: stockai-stop-schedule
       Description: Snapshot + Stop StockAI EC2 instance daily
-      ScheduleExpression: !Sub 'cron(30 ${StopHourUTC} ? * MON-FRI *)'
+      ScheduleExpression: !Sub 'cron(0 ${StopHourUTC} ? * MON-FRI *)'
       State: ENABLED
       Targets:
         - Arn: !GetAtt StockAiSchedulerFunction.Arn
@@ -219,11 +219,11 @@ Outputs:
 
   StartSchedule:
     Description: Start schedule (cron)
-    Value: !Sub 'cron(30 ${StartHourUTC} ? * MON-FRI *)'
+    Value: !Sub 'cron(0 ${StartHourUTC} ? * MON-FRI *)'
 
   StopSchedule:
     Description: Stop schedule (cron)
-    Value: !Sub 'cron(30 ${StopHourUTC} ? * MON-FRI *)'
+    Value: !Sub 'cron(0 ${StopHourUTC} ? * MON-FRI *)'
 
   ManualTestStart:
     Description: Test start manually

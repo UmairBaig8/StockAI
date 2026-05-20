@@ -71,7 +71,7 @@ def render_page(template_name: str, title: str, active: str) -> str:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{title}</title>
-  <link rel="icon" href="data:image/svg+xml,{_ICON_SVG}" type="image/svg+xml">
+  <link rel="icon" href="/static/img/app-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/system.css?v=3">
 </head>
 <body>

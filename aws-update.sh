@@ -12,7 +12,7 @@ KEY_NAME="${KEY_NAME:-stockai-key}"
 if [ -n "$1" ]; then
   PUBLIC_IP="$1"
 elif [ -f "aws_env.md" ]; then
-  PUBLIC_IP=$(grep -m1 '\*\*Public IP\*\*' aws_env.md | grep -oP '\d+\.\d+\.\d+\.\d+')
+  PUBLIC_IP=$(grep -m1 '\*\*Public IP\*\*' aws_env.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
 fi
 
 if [ -z "$PUBLIC_IP" ]; then
@@ -35,7 +35,7 @@ ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'sudo
 
 # ── 3. Check if execution-bin changed (needs rebuild) ──
 echo -e "\n${CYAN}>>> Checking for Rust changes...${NC}"
-RUST_CHANGED=$(ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'cd /root/stockai && git diff HEAD~1 --name-only | grep -c "^execution/" || true')
+RUST_CHANGED=$(ssh -i "${KEY_NAME}.pem" -o StrictHostKeyChecking=no ec2-user@"$PUBLIC_IP" 'sudo bash -c "cd /root/stockai && git diff HEAD~1 --name-only | grep -c \"^execution/\" || true"')
 
 if [ "$RUST_CHANGED" -gt 0 ]; then
   echo -e "${CYAN}  Rust code changed — uploading new execution-bin...${NC}"

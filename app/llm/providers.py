@@ -71,12 +71,12 @@ class LLMAdapter(ABC):
             elapsed = (time.monotonic() - t0) * 1000
             text = self._strip_code_fences(text)
             result = json.loads(text)
-            _record_trace(self.agent_name, self.provider.value, self.model_name,
+            _record_trace(self.agent_name, self.provider.value, self.model,
                          prompt_chars, len(text), elapsed, True)
             return result
         except Exception as e:
             elapsed = (time.monotonic() - t0) * 1000
-            _record_trace(self.agent_name, self.provider.value, self.model_name,
+            _record_trace(self.agent_name, self.provider.value, self.model,
                          prompt_chars, 0, elapsed, False, str(e))
             raise
 

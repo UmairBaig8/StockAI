@@ -190,6 +190,10 @@ def create_app() -> FastAPI:
                             return Response(content=compressed, status_code=response.status_code,
                                 headers={**response.headers, "content-encoding": "gzip", "content-length": str(len(compressed)), "vary": "Accept-Encoding"},
                                 media_type=response.headers.get("content-type"))
+                    # Return reconstructed body even if not compressed
+                    return Response(content=body, status_code=response.status_code,
+                        headers={k: v for k, v in response.headers.items() if k.lower() not in ("content-length",)},
+                        media_type=response.headers.get("content-type"))
             return response
 
     app.add_middleware(GzipMiddleware)

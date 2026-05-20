@@ -398,7 +398,8 @@ async def ai_research_analysis(
 
     ind = strategy_agent.get_indicators(ticker_upper)
     news_items = news_scraper.get_news_for_ticker(ticker_upper, limit=5)
-    opt = options_flow.get_market_pcr(ticker_upper)
+    opt = options_flow.get_option_sentiment(ticker_upper)
+    market_pcr = options_flow.get_market_pcr()
 
     reg = ind.get("regime", {})
     macd = ind.get("macd", {})
@@ -415,9 +416,10 @@ async def ai_research_analysis(
     )
 
     news_context = "\n".join([f"- {n['title']}" for n in news_items[:5]]) if news_items else "No recent news."
-    pcr_context = f"Options PCR: {opt.get('pcr', 'N/A')}, Sentiment: {opt.get('sentiment', 'neutral')}" if opt.get("status") != "no_data" else "Options data unavailable."
+    pcr_context = f"Market PCR: {market_pcr.get('pcr', 'N/A')}, Sentiment: {market_pcr.get('sentiment', 'neutral')}"
+    ticker_opt = f"Ticker Options: {opt.get('status', 'no_data')}"
 
-    context = f"Technical Analysis:\n{tech_context}\n\nRecent News:\n{news_context}\n\nOptions Data:\n{pcr_context}"
+    context = f"Technical Analysis:\n{tech_context}\n\nRecent News:\n{news_context}\n\nOptions Data:\n{pcr_context}\n{ticker_opt}"
 
     result = researcher.analyze(ResearchRequest(
         ticker=ticker_upper,
@@ -431,7 +433,7 @@ async def ai_research_analysis(
         "change_pct": ind.get("change_pct"),
         "indicators": ind,
         "news": news_items[:5],
-        "options": opt,
+        "options": {**opt, "market_pcr": market_pcr},
         "ai": {
             "sentiment": result.sentiment.value,
             "confidence": result.confidence,

@@ -113,26 +113,55 @@ async function runBacktest(){
       </div>
       ${chartHtml}
       <div class="card"><h3>Trades</h3>
-        <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Dir</th><th>Q</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>₹</th></tr></thead>
-        <tbody id="trade-body"></tbody></table></div>
-        <div class="pagination" id="trade-pager"></div>
+        <div id="backtest-trade-table"></div>
       </div>`;
-    renderTradePage();
+    buildTradeTable(trades);
   }catch(e){document.getElementById('results').innerHTML=`<div class="loading-row">Error: ${e.message}</div>`}
 }
 
-function renderTradePage(){
-  const trades=window._trades||[];
-  const page=window._page||0;
-  const start=page*PAGE_SIZE;
-  const slice=trades.slice(start,start+PAGE_SIZE);
-  const el=document.getElementById('trade-body');
-  if(!el)return;
-  el.innerHTML=slice.map(t=>`<tr><td>${(t.entry_time||'').slice(0,16)}</td><td>${t.dir}</td><td>${t.qty}</td><td>${t.entry}</td><td>${t.exit}</td><td style="color:${t.pnl_pct>0?'var(--accent)':'var(--err)'}">${(t.pnl_pct>0?'+':'')+t.pnl_pct}%</td><td style="color:${t.pnl>0?'var(--accent)':'var(--err)'}">₹${t.pnl}</td></tr>`).join('');
-  const total=Math.max(1,Math.ceil(trades.length/PAGE_SIZE));
-  const pager=document.getElementById('trade-pager');
-  if(!pager)return;
-  pager.innerHTML=`<button onclick="window._page=Math.max(0,${page-1});renderTradePage()" ${page===0?'disabled':''}>Prev</button><span>${page+1} / ${total}</span><button onclick="window._page=Math.min(${total-1},${page+1});renderTradePage()" ${page>=total-1?'disabled':''}>Next</button>`;
+function buildTradeTable(trades){
+  const columns=[
+    {key:'time',label:'Time',width:'140px'},
+    {key:'dir',label:'Dir',width:'50px'},
+    {key:'qty',label:'Q',width:'40px'},
+    {key:'entry',label:'Entry',width:'80px'},
+    {key:'exit',label:'Exit',width:'80px'},
+    {key:'pnl_pct',label:'P&L %',width:'80px'},
+    {key:'pnl',label:'₹',width:'80px'}
+  ];
+
+  const rows=trades.map(t=>({
+    time:(t.entry_time||'').slice(0,16),
+    dir:t.dir,
+    qty:t.qty,
+    entry:t.entry,
+    exit:t.exit,
+    pnl_pct:(t.pnl_pct>0?'+':'')+t.pnl_pct+'%',
+    pnl:'₹'+t.pnl,
+    pnl_raw:t.pnl_pct,
+    pnl_raw_rupee:t.pnl
+  }));
+
+  new PremiumTable('backtest-trade-table',{
+    columns,
+    data:rows,
+    pageSize:10,
+    searchPlaceholder:'Search trades...',
+    emptyMessage:'No trades',
+    renderCell:function(key,val,row){
+      if(key==='pnl_pct'){
+        return `<span style="color:${row.pnl_raw>0?'var(--accent)':'var(--err)'}">${val}</span>`;
+      }
+      if(key==='pnl'){
+        return `<span style="color:${row.pnl_raw_rupee>0?'var(--accent)':'var(--err)'}">${val}</span>`;
+      }
+      if(key==='dir'){
+        const cls=row.dir==='BUY'?'tag green':'tag red';
+        return `<span class="${cls}">${val}</span>`;
+      }
+      return val;
+    }
+  });
 }
 
 function renderChart(ticker,vals){

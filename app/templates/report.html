@@ -18,8 +18,6 @@
   .heatmap-label{font-size:0.48rem;color:var(--muted);text-align:center}
   .section h3{font-size:0.78rem;color:var(--fg);margin:4px 0 8px;display:flex;align-items:center;gap:8px;font-weight:700}
   .section h3 span{font-weight:500;color:var(--muted);font-size:0.64rem}
-  .daily-row{cursor:pointer;transition:background .1s}
-  .daily-row:hover{background:rgba(0,255,136,0.06)}
   .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;justify-content:center;align-items:flex-start;padding:40px 16px;overflow-y:auto}
   .modal-overlay.open{display:flex}
   .modal{background:var(--surface);border:1px solid var(--border-soft);border-radius:16px;max-width:900px;width:100%;padding:20px;position:relative}
@@ -31,8 +29,8 @@
   .mini-card{background:rgba(8,9,13,0.4);border-radius:8px;padding:8px;text-align:center}
   .mini-card .v{font-size:0.85rem;font-weight:700}
   .mini-card .l{font-size:0.55rem;color:var(--muted)}
-  .modal .tbl-wrap{margin-bottom:12px}
   .modal .section-title{font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin:12px 0 6px;letter-spacing:0.05em}
+  .modal .premium-table-wrap{margin-bottom:12px}
 </style>
 
 <header>
@@ -56,15 +54,13 @@
 <div class="tab-content active" id="tab-daily">
   <div class="section"><h3>Equity Curve <span id="dd-info"></span></h3><div class="equity-bar" id="equity-chart"></div></div>
   <div class="section"><h3>Daily History</h3>
-    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Trades</th><th>W/L</th><th>Win%</th><th>P&L</th><th>Best</th><th>Worst</th><th>Avg W/L</th><th>PF</th></tr></thead>
-    <tbody id="daily-body"><tr><td colspan="9" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
+    <div id="daily-table"></div>
   </div>
 </div>
 
 <div class="tab-content" id="tab-tickers">
   <div class="section"><h3>Per-Ticker Performance <span>ranked by P&L</span></h3>
-    <div class="tbl-wrap"><table><thead><tr><th>Ticker</th><th>Trades</th><th>W/L</th><th>Win%</th><th>P&L</th><th>Avg Win</th><th>Avg Loss</th><th>Best</th><th>Worst</th><th>Volume</th></tr></thead>
-    <tbody id="ticker-body"><tr><td colspan="10" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
+    <div id="ticker-table"></div>
   </div>
 </div>
 
@@ -72,42 +68,35 @@
   <div class="section"><h3>P&L by Hour (IST) <span>when does the strategy perform best?</span></h3>
     <div class="heatmap-row" id="hourly-chart"></div>
     <div style="display:flex;gap:2px" id="hourly-labels"></div>
-    <div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>Hour</th><th>Trades</th><th>W/L</th><th>P&L</th><th>Volume</th></tr></thead>
-    <tbody id="hourly-body"><tr><td colspan="5" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
+    <div id="hourly-table" style="margin-top:8px"></div>
   </div>
 </div>
 
 <div class="tab-content" id="tab-strategies">
   <div class="section"><h3>Strategy Rule Effectiveness <span>which signals produce profit?</span></h3>
-    <div class="tbl-wrap"><table><thead><tr><th>Strategy</th><th>Signal</th><th>Trades</th><th>W/L</th><th>Win%</th><th>P&L</th></tr></thead>
-    <tbody id="strategy-body"><tr><td colspan="6" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
+    <div id="strategy-table"></div>
   </div>
 </div>
 
 <div class="tab-content" id="tab-weekly">
   <div class="section"><h3>Weekly Rollup <span>last 12 weeks</span></h3>
-    <div class="tbl-wrap"><table><thead><tr><th>Week</th><th>Trades</th><th>W/L</th><th>Win%</th><th>P&L</th><th>Avg Win</th><th>Avg Loss</th></tr></thead>
-    <tbody id="weekly-body"><tr><td colspan="7" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
+    <div id="weekly-table"></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="day-modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
-    <button class="modal-close" onclick="closeModal()">✕</button>
+    <button class="modal-close" onclick="closeModal()">&#x2715;</button>
     <h2 id="modal-title">Day Detail</h2>
     <div class="mini-cards" id="modal-cards"></div>
     <div class="section-title">Trades</div>
-    <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>Signal</th></tr></thead>
-    <tbody id="modal-trades"></tbody></table></div>
+    <div id="modal-trades-table"></div>
     <div class="section-title">By Ticker</div>
-    <div class="tbl-wrap"><table><thead><tr><th>Ticker</th><th>Trades</th><th>W/L</th><th>P&L</th></tr></thead>
-    <tbody id="modal-tickers"></tbody></table></div>
+    <div id="modal-tickers-table"></div>
     <div class="section-title">By Hour</div>
-    <div class="tbl-wrap"><table><thead><tr><th>Hour</th><th>Trades</th><th>W/L</th><th>P&L</th></tr></thead>
-    <tbody id="modal-hourly"></tbody></table></div>
+    <div id="modal-hourly-table"></div>
     <div class="section-title">By Strategy</div>
-    <div class="tbl-wrap"><table><thead><tr><th>Strategy</th><th>Trades</th><th>W/L</th><th>P&L</th></tr></thead>
-    <tbody id="modal-strategies"></tbody></table></div>
+    <div id="modal-strategies-table"></div>
   </div>
 </div>
 {% endblock %}
@@ -151,37 +140,201 @@ function renderEquity(){
       <span class="bar-label">${c.date.slice(5)}</span></div>`;
   }).join('');
 }
+
 function renderDaily(){
   const h=reportData.daily_history||[];
-  document.getElementById('daily-body').innerHTML=h.map(d=>`<tr class="daily-row" onclick="openDay('${d.date}')"><td>${d.date}</td><td>${d.total_trades}</td><td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td><td>${d.win_rate}%</td><td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${Math.round(d.pnl).toLocaleString('en-IN')}</td><td style="color:var(--accent)">${d.best_pnl>0?'+':''}${d.best_pnl}%</td><td style="color:var(--err)">${d.worst_pnl}%</td><td><span style="color:var(--accent)">+${d.avg_win}%</span>/<span style="color:var(--err)">${d.avg_loss}%</span></td><td style="color:${d.profit_factor>=1.5?'var(--accent)':d.profit_factor>=1?'var(--muted)':'var(--err)'}">${d.profit_factor}</td></tr>`).join('');
+  const columns=[
+    {key:'date',label:'Date'},
+    {key:'trades',label:'Trades',width:'60px'},
+    {key:'wl',label:'W/L',width:'80px'},
+    {key:'win_rate',label:'Win%',width:'60px'},
+    {key:'pnl',label:'P&L'},
+    {key:'best',label:'Best',width:'70px'},
+    {key:'worst',label:'Worst',width:'70px'},
+    {key:'avg_wl',label:'Avg W/L'},
+    {key:'pf',label:'PF',width:'60px'}
+  ];
+  const rows=h.map(d=>({
+    date:d.date,
+    trades:d.total_trades,
+    wl:`<span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span>`,
+    win_rate:d.win_rate+'%',
+    pnl:d.pnl>=0?'+₹'+Math.round(d.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(d.pnl)).toLocaleString('en-IN'),
+    pnl_raw:d.pnl,
+    best:d.best_pnl>0?'+'+d.best_pnl+'%':d.best_pnl+'%',
+    worst:d.worst_pnl+'%',
+    avg_wl:`<span style="color:var(--accent)">+${d.avg_win}%</span>/<span style="color:var(--err)">${d.avg_loss}%</span>`,
+    pf:d.profit_factor,
+    _date:d.date
+  }));
+  new PremiumTable('daily-table',{
+    columns,data:rows,pageSize:15,searchable:false,
+    renderCell:function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'}">${val}</span>`;
+      if(key==='pf')return `<span style="color:${row.pf>=1.5?'var(--accent)':row.pf>=1?'var(--muted)':'var(--err)'}">${val}</span>`;
+      return val;
+    },
+    onRowClick:function(row){openDay(row._date)}
+  });
+  document.querySelectorAll('#daily-table .pt-tbody tr').forEach(tr=>tr.style.cursor='pointer');
 }
+
 function renderTickers(){
   const t=reportData.tickers||[];
-  document.getElementById('ticker-body').innerHTML=t.map(d=>`<tr><td style="font-weight:700">${d.ticker}</td><td>${d.total_trades}</td><td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td><td>${d.win_rate}%</td><td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${Math.round(d.pnl).toLocaleString('en-IN')}</td><td style="color:var(--accent)">+${d.avg_win}%</td><td style="color:var(--err)">${d.avg_loss}%</td><td style="color:var(--accent)">${d.best_pnl>0?'+':''}${d.best_pnl}%</td><td style="color:var(--err)">${d.worst_pnl}%</td><td>₹${Math.round(d.volume).toLocaleString('en-IN')}</td></tr>`).join('')||'<tr><td colspan="10" style="color:var(--muted)">No data</td></tr>';
+  const columns=[
+    {key:'ticker',label:'Ticker'},
+    {key:'trades',label:'Trades',width:'60px'},
+    {key:'wl',label:'W/L',width:'80px'},
+    {key:'win_rate',label:'Win%',width:'60px'},
+    {key:'pnl',label:'P&L'},
+    {key:'avg_win',label:'Avg Win',width:'70px'},
+    {key:'avg_loss',label:'Avg Loss',width:'70px'},
+    {key:'best',label:'Best',width:'70px'},
+    {key:'worst',label:'Worst',width:'70px'},
+    {key:'volume',label:'Volume'}
+  ];
+  const rows=t.map(d=>({
+    ticker:d.ticker,
+    trades:d.total_trades,
+    wl:`<span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span>`,
+    win_rate:d.win_rate+'%',
+    pnl:d.pnl>=0?'+₹'+Math.round(d.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(d.pnl)).toLocaleString('en-IN'),
+    pnl_raw:d.pnl,
+    avg_win:'+'+d.avg_win+'%',
+    avg_loss:d.avg_loss+'%',
+    best:d.best_pnl>0?'+'+d.best_pnl+'%':d.best_pnl+'%',
+    worst:d.worst_pnl+'%',
+    volume:'₹'+Math.round(d.volume).toLocaleString('en-IN')
+  }));
+  new PremiumTable('ticker-table',{
+    columns,data:rows,pageSize:15,
+    emptyMessage:'No ticker data',
+    renderCell:function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'}">${val}</span>`;
+      return val;
+    }
+  });
 }
+
 function renderHourly(){
   const h=reportData.hourly||[];
-  if(!h.length){document.getElementById('hourly-body').innerHTML='<tr><td colspan="5" style="color:var(--muted)">No data</td></tr>';return}
+  if(!h.length){document.getElementById('hourly-table').innerHTML='<div class="pt-empty">No hourly data</div>';return}
   const maxAbs=Math.max(...h.map(d=>Math.abs(d.pnl)),1);
   document.getElementById('hourly-chart').innerHTML=h.map(d=>`<div class="heatmap-bar ${d.pnl>=0?'win':'loss'}" style="height:${Math.max(3,(Math.abs(d.pnl)/maxAbs)*55)}px" title="${d.label}: ${d.total_trades} trades, ${d.pnl>=0?'+':''}₹${Math.round(d.pnl)}"></div>`).join('');
   document.getElementById('hourly-labels').innerHTML=h.map(d=>`<span class="heatmap-label" style="flex:1;min-width:14px">${d.label.slice(0,2)}</span>`).join('');
-  document.getElementById('hourly-body').innerHTML=h.map(d=>`<tr><td>${d.label}</td><td>${d.total_trades}</td><td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td><td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${Math.round(d.pnl).toLocaleString('en-IN')}</td><td>₹${Math.round(d.volume).toLocaleString('en-IN')}</td></tr>`).join('');
+
+  const columns=[
+    {key:'hour',label:'Hour'},
+    {key:'trades',label:'Trades',width:'60px'},
+    {key:'wl',label:'W/L',width:'80px'},
+    {key:'pnl',label:'P&L'},
+    {key:'volume',label:'Volume'}
+  ];
+  const rows=h.map(d=>({
+    hour:d.label,
+    trades:d.total_trades,
+    wl:`<span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span>`,
+    pnl:d.pnl>=0?'+₹'+Math.round(d.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(d.pnl)).toLocaleString('en-IN'),
+    pnl_raw:d.pnl,
+    volume:'₹'+Math.round(d.volume).toLocaleString('en-IN')
+  }));
+  new PremiumTable('hourly-table',{
+    columns,data:rows,pageSize:15,searchable:false,
+    renderCell:function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'}">${val}</span>`;
+      return val;
+    }
+  });
 }
+
 function renderStrategies(){
   const s=reportData.strategies||[];
   const cats={};
   for(const d of s){const c=d.strategy;if(!cats[c])cats[c]={strategy:c,total_trades:0,wins:0,losses:0,pnl:0,signals:[]};cats[c].total_trades+=d.total_trades;cats[c].wins+=d.wins;cats[c].losses+=d.losses;cats[c].pnl+=d.pnl;cats[c].signals.push(d)}
   const rows=Object.values(cats).sort((a,b)=>b.pnl-a.pnl);
-  document.getElementById('strategy-body').innerHTML=rows.map(c=>{const total=c.total_trades,wr=total?(c.wins/total*100).toFixed(1):'0';
-    return `<tr style="font-weight:700;background:var(--surface-2)"><td>${c.strategy}</td><td>${c.signals.length} variants</td><td>${total}</td><td><span class="tag green">${c.wins}W</span> <span class="tag red">${c.losses}L</span></td><td>${wr}%</td><td style="color:${c.pnl>=0?'var(--accent)':'var(--err)'}">${c.pnl>=0?'+':''}₹${Math.round(c.pnl).toLocaleString('en-IN')}</td></tr>`+c.signals.map(d=>`<tr><td style="padding-left:16px;color:var(--muted);font-size:0.65rem">${d.reason.slice(0,60)}</td><td></td><td>${d.total_trades}</td><td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td><td>${d.win_rate}%</td><td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${Math.round(d.pnl).toLocaleString('en-IN')}</td></tr>`).join('')}).join('')||'<tr><td colspan="6" style="color:var(--muted)">No strategy data yet</td></tr>';
+
+  const columns=[
+    {key:'strategy',label:'Strategy'},
+    {key:'signals',label:'Signals',width:'80px'},
+    {key:'trades',label:'Trades',width:'60px'},
+    {key:'wl',label:'W/L',width:'80px'},
+    {key:'win_rate',label:'Win%',width:'60px'},
+    {key:'pnl',label:'P&L'}
+  ];
+  const dataRows=[];
+  rows.forEach(c=>{
+    const total=c.total_trades,wr=total?(c.wins/total*100).toFixed(1):'0';
+    dataRows.push({
+      strategy:c.strategy,
+      signals:c.signals.length+' variants',
+      trades:total,
+      wl:`<span class="tag green">${c.wins}W</span> <span class="tag red">${c.losses}L</span>`,
+      win_rate:wr+'%',
+      pnl:c.pnl>=0?'+₹'+Math.round(c.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(c.pnl)).toLocaleString('en-IN'),
+      pnl_raw:c.pnl,
+      _isHeader:true
+    });
+    c.signals.forEach(d=>{
+      dataRows.push({
+        strategy:'<span style="padding-left:12px;color:var(--muted);font-size:0.68rem">'+d.reason.slice(0,60)+'</span>',
+        signals:'',
+        trades:d.total_trades,
+        wl:`<span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span>`,
+        win_rate:d.win_rate+'%',
+        pnl:d.pnl>=0?'+₹'+Math.round(d.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(d.pnl)).toLocaleString('en-IN'),
+        pnl_raw:d.pnl,
+        _isSub:true
+      });
+    });
+  });
+  new PremiumTable('strategy-table',{
+    columns,data:dataRows,pageSize:20,searchable:false,
+    emptyMessage:'No strategy data yet',
+    renderCell:function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'}">${val}</span>`;
+      return val;
+    }
+  });
 }
+
 function renderWeekly(){
   const w=reportData.weekly||[];
-  document.getElementById('weekly-body').innerHTML=w.map(d=>`<tr><td>${d.week}</td><td>${d.total_trades}</td><td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td><td>${d.win_rate}%</td><td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${Math.round(d.pnl).toLocaleString('en-IN')}</td><td style="color:var(--accent)">+${d.avg_win}%</td><td style="color:var(--err)">${d.avg_loss}%</td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--muted)">No weekly data</td></tr>';
+  const columns=[
+    {key:'week',label:'Week'},
+    {key:'trades',label:'Trades',width:'60px'},
+    {key:'wl',label:'W/L',width:'80px'},
+    {key:'win_rate',label:'Win%',width:'60px'},
+    {key:'pnl',label:'P&L'},
+    {key:'avg_win',label:'Avg Win',width:'70px'},
+    {key:'avg_loss',label:'Avg Loss',width:'70px'}
+  ];
+  const rows=w.map(d=>({
+    week:d.week,
+    trades:d.total_trades,
+    wl:`<span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span>`,
+    win_rate:d.win_rate+'%',
+    pnl:d.pnl>=0?'+₹'+Math.round(d.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(d.pnl)).toLocaleString('en-IN'),
+    pnl_raw:d.pnl,
+    avg_win:'+'+d.avg_win+'%',
+    avg_loss:d.avg_loss+'%'
+  }));
+  new PremiumTable('weekly-table',{
+    columns,data:rows,pageSize:15,searchable:false,
+    emptyMessage:'No weekly data',
+    renderCell:function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'}">${val}</span>`;
+      return val;
+    }
+  });
 }
+
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.trim().toLowerCase().startsWith(tab)));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('active',c.id==='tab-'+tab));
+}
+
+function buildModalTable(containerId,columns,data,renderCell){
+  new PremiumTable(containerId,{columns,data,pageSize:10,searchable:false,pagination:data.length>10,renderCell:renderCell||null});
 }
 
 async function openDay(date){
@@ -201,10 +354,68 @@ async function openDay(date){
       <div class="mini-card"><div class="v">${s.profit_factor>=999?'∞':s.profit_factor}</div><div class="l">Profit Factor</div></div>
       ${s.best_trade?`<div class="mini-card"><div class="v" style="color:var(--accent)">${s.best_trade.ticker} +${s.best_trade.pnl_percent}%</div><div class="l">Best Trade</div></div>`:''}
       ${s.worst_trade?`<div class="mini-card"><div class="v" style="color:var(--err)">${s.worst_trade.ticker} ${s.worst_trade.pnl_percent}%</div><div class="l">Worst Trade</div></div>`:''}`;
-    document.getElementById('modal-trades').innerHTML=d.trades.map(t=>`<tr><td style="color:var(--muted);font-size:0.65rem">${t.time}</td><td style="font-weight:700">${t.ticker}</td><td><span class="tag ${t.direction==='BUY'?'green':'red'}">${t.direction}</span></td><td>${t.qty}</td><td>₹${t.entry_price.toLocaleString('en-IN')}</td><td>₹${t.exit_price.toLocaleString('en-IN')}</td><td style="color:${t.pnl_percent>=0?'var(--accent)':'var(--err)'};font-weight:700">${t.pnl_percent>=0?'+':''}${t.pnl_percent}%</td><td style="color:var(--muted);font-size:0.6rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.reason}">${t.reason||'—'}</td></tr>`).join('');
-    document.getElementById('modal-tickers').innerHTML=d.tickers.map(t=>`<tr><td style="font-weight:700">${t.ticker}</td><td>${t.trades}</td><td><span class="tag green">${t.wins}W</span> <span class="tag red">${t.losses}L</span></td><td style="color:${t.pnl>=0?'var(--accent)':'var(--err)'};font-weight:700">${t.pnl>=0?'+':''}₹${Math.round(t.pnl).toLocaleString('en-IN')}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted)">—</td></tr>';
-    document.getElementById('modal-hourly').innerHTML=d.hourly.map(h=>`<tr><td>${h.hour}</td><td>${h.trades}</td><td><span class="tag green">${h.wins}W</span> <span class="tag red">${h.losses}L</span></td><td style="color:${h.pnl>=0?'var(--accent)':'var(--err)'};font-weight:700">${h.pnl>=0?'+':''}₹${Math.round(h.pnl).toLocaleString('en-IN')}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted)">—</td></tr>';
-    document.getElementById('modal-strategies').innerHTML=d.strategies.map(s=>`<tr><td style="font-weight:700">${s.strategy}</td><td>${s.trades}</td><td><span class="tag green">${s.wins}W</span> <span class="tag red">${s.losses}L</span></td><td style="color:${s.pnl>=0?'var(--accent)':'var(--err)'};font-weight:700">${s.pnl>=0?'+':''}₹${Math.round(s.pnl).toLocaleString('en-IN')}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted)">—</td></tr>';
+
+    const tradeRows=d.trades.map(t=>({
+      time:t.time,
+      ticker:t.ticker,
+      dir:`<span class="tag ${t.direction==='BUY'?'green':'red'}">${t.direction}</span>`,
+      qty:t.qty,
+      entry:'₹'+t.entry_price.toLocaleString('en-IN'),
+      exit:'₹'+t.exit_price.toLocaleString('en-IN'),
+      pnl:t.pnl_percent>=0?'+'+t.pnl_percent+'%':t.pnl_percent+'%',
+      pnl_raw:t.pnl_percent,
+      reason:t.reason||'—'
+    }));
+    buildModalTable('modal-trades-table',[
+      {key:'time',label:'Time',width:'80px'},{key:'ticker',label:'Ticker'},{key:'dir',label:'Dir',width:'60px'},
+      {key:'qty',label:'Qty',width:'40px'},{key:'entry',label:'Entry'},{key:'exit',label:'Exit'},
+      {key:'pnl',label:'P&L %',width:'70px'},{key:'reason',label:'Signal'}
+    ],tradeRows,function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'};font-weight:700">${val}</span>`;
+      return val;
+    });
+
+    const tickerRows=d.tickers.map(t=>({
+      ticker:t.ticker,
+      trades:t.trades,
+      wl:`<span class="tag green">${t.wins}W</span> <span class="tag red">${t.losses}L</span>`,
+      pnl:t.pnl>=0?'+₹'+Math.round(t.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(t.pnl)).toLocaleString('en-IN'),
+      pnl_raw:t.pnl
+    }));
+    buildModalTable('modal-tickers-table',[
+      {key:'ticker',label:'Ticker'},{key:'trades',label:'Trades',width:'50px'},{key:'wl',label:'W/L',width:'70px'},{key:'pnl',label:'P&L'}
+    ],tickerRows,function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'};font-weight:700">${val}</span>`;
+      return val;
+    });
+
+    const hourlyRows=d.hourly.map(h=>({
+      hour:h.hour,
+      trades:h.trades,
+      wl:`<span class="tag green">${h.wins}W</span> <span class="tag red">${h.losses}L</span>`,
+      pnl:h.pnl>=0?'+₹'+Math.round(h.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(h.pnl)).toLocaleString('en-IN'),
+      pnl_raw:h.pnl
+    }));
+    buildModalTable('modal-hourly-table',[
+      {key:'hour',label:'Hour'},{key:'trades',label:'Trades',width:'50px'},{key:'wl',label:'W/L',width:'70px'},{key:'pnl',label:'P&L'}
+    ],hourlyRows,function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'};font-weight:700">${val}</span>`;
+      return val;
+    });
+
+    const strategyRows=d.strategies.map(s=>({
+      strategy:s.strategy,
+      trades:s.trades,
+      wl:`<span class="tag green">${s.wins}W</span> <span class="tag red">${s.losses}L</span>`,
+      pnl:s.pnl>=0?'+₹'+Math.round(s.pnl).toLocaleString('en-IN'):'-₹'+Math.abs(Math.round(s.pnl)).toLocaleString('en-IN'),
+      pnl_raw:s.pnl
+    }));
+    buildModalTable('modal-strategies-table',[
+      {key:'strategy',label:'Strategy'},{key:'trades',label:'Trades',width:'50px'},{key:'wl',label:'W/L',width:'70px'},{key:'pnl',label:'P&L'}
+    ],strategyRows,function(key,val,row){
+      if(key==='pnl')return `<span style="color:${row.pnl_raw>=0?'var(--accent)':'var(--err)'};font-weight:700">${val}</span>`;
+      return val;
+    });
   }catch(e){document.getElementById('modal-title').innerHTML=`<span>${date}</span> <span style="color:var(--err)">Failed to load</span>`}
 }
 function closeModal(){document.getElementById('day-modal').classList.remove('open')}

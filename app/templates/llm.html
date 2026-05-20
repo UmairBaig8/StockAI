@@ -18,7 +18,6 @@
   .trace-stats{display:flex;gap:14px;font-size:0.64rem;color:var(--muted);flex-wrap:wrap}
   .trace-stats span{display:flex;align-items:center;gap:4px}
 
-  .table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border-soft);border-radius:12px}
   .chart-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px}
   .mini-chart{background:linear-gradient(180deg,rgba(23,24,36,0.85),rgba(18,18,26,0.85));border:1px solid var(--border-soft);border-radius:12px;padding:12px;min-height:110px}
   .mini-chart h4{font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;font-weight:700}
@@ -26,15 +25,13 @@
   .mini-chart .spark svg{width:100%;height:100%}
   .mini-chart .value{font-size:0.82rem;font-weight:800;color:var(--fg);margin-top:4px}
   .mini-chart .value span{font-size:0.58rem;color:var(--muted);margin-left:4px}
-  table{width:100%;border-collapse:collapse;font-size:0.7rem}
-  th,td{padding:5px 8px;border-bottom:1px solid var(--border-soft)}
-  th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);font-weight:700;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.05em}
-  tr:hover td{background:rgba(255,255,255,0.015)}
-  tr.trace-detail td{padding:0;background:var(--surface-2)}
+
+  .trace-detail-row td{padding:0!important;background:var(--surface-2)!important}
   .trace-detail-inner{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
   .trace-detail-inner pre{background:var(--bg);border:1px solid var(--border-soft);border-radius:8px;padding:10px;font-size:0.65rem;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0;line-height:1.5}
   .trace-detail-inner h5{font-size:0.6rem;color:var(--muted);text-transform:uppercase;margin-bottom:6px;letter-spacing:0.05em}
-  .trace-expand{cursor:pointer;color:var(--accent);font-size:0.6rem;text-decoration:underline}
+  .trace-expand{cursor:pointer;color:var(--accent);font-size:0.65rem;font-weight:700;text-decoration:none;padding:3px 8px;border-radius:5px;background:var(--accent-soft);transition:background .15s ease}
+  .trace-expand:hover{background:rgba(0,255,136,0.2)}
   .trace-err{color:var(--err)}
   .trace-ok{color:var(--accent)}
 </style>
@@ -58,23 +55,14 @@
   <div class="trace-stats" id="trace-summary"></div>
 </div>
 
-<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
-  <input id="trace-filter" type="text" placeholder="Filter by agent, provider, error..." style="flex:1;min-width:200px;font-size:0.7rem;padding:4px 8px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:8px;color:var(--fg)" oninput="filterTraces()">
-  <label style="font-size:0.62rem;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" id="filter-errors" onchange="filterTraces()"> Errors only</label>
-</div>
-
 <div id="agent-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
 
-<div class="table-wrap">
-  <table>
-    <thead><tr><th>Time</th><th>Agent</th><th>Provider / Model</th><th>Tokens</th><th>Latency</th><th>Status</th><th></th></tr></thead>
-    <tbody id="trace-body"><tr><td colspan="7" style="color:var(--muted);text-align:center">Loading traces...</td></tr></tbody>
-  </table>
-</div>
+<div id="trace-table-container"></div>
 {% endblock %}
 <script>
 let _snapshots=[];
 let _allTraces=[];
+let traceTable=null;
 const MAX_SNAPS=30;
 
 async function load(){
@@ -100,8 +88,76 @@ function drawSpark(elId, vals, color){
   const pts=vals.map((v,i)=>`${(i/(vals.length-1))*w},${h-((v-min)/r)*h}`).join(' ');
   svg.innerHTML=`<polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts}"/>`;
 }
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function buildTraceTable(traces){
+  const columns=[
+    {key:'time',label:'Time',width:'90px'},
+    {key:'agent',label:'Agent'},
+    {key:'provider',label:'Provider / Model'},
+    {key:'tokens',label:'Tokens',width:'80px'},
+    {key:'latency',label:'Latency',width:'80px'},
+    {key:'status',label:'Status'},
+    {key:'actions',label:'',width:'60px'}
+  ];
+
+  const rows=traces.map((t,i)=>({
+    time:new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false}),
+    agent:t.agent,
+    provider:`${t.provider}/${t.model}`,
+    tokens:`${t.prompt_tokens_est}+${t.response_tokens_est}`,
+    latency:`${t.latency_ms}ms`,
+    status:t.success?'OK':(t.error||'ERR').substring(0,40),
+    statusClass:t.success?'trace-ok':'trace-err',
+    actions:`<span class="trace-expand" onclick="toggleTrace(${i})">view</span>`,
+    _index:i,
+    _raw:t
+  }));
+
+  traceTable=new PremiumTable('trace-table-container',{
+    columns,
+    data:rows,
+    pageSize:15,
+    searchPlaceholder:'Filter by agent, provider, error...',
+    emptyMessage:'No traces found',
+    renderCell:function(key,val,row){
+      if(key==='status'){
+        return `<span class="${row.statusClass}">${val}</span>`;
+      }
+      if(key==='actions'){
+        return val;
+      }
+      return val;
+    }
+  });
+}
+
+function toggleTrace(i){
+  const existing=document.getElementById('trace-detail-'+i);
+  if(existing){existing.remove();return}
+
+  const t=_allTraces[i];
+  if(!t)return;
+
+  const tr=document.createElement('tr');
+  tr.id='trace-detail-'+i;
+  tr.className='trace-detail-row';
+  tr.innerHTML=`<td colspan="7"><div class="trace-detail-inner">
+    <div><h5>Request (prompt)</h5><pre>${escHtml(t.prompt||'(empty)')}</pre></div>
+    <div><h5>Response</h5><pre>${escHtml(t.response||'(empty)')}</pre></div>
+  </div></td>`;
+
+  const tableBody=document.querySelector('#trace-table-container .pt-tbody');
+  if(tableBody){
+    const allRows=tableBody.querySelectorAll('tr');
+    if(allRows[i]){
+      allRows[i].after(tr);
+    }
+  }
+}
+
 async function loadTraces(){
-  const el=document.getElementById('trace-body');
   try{
     const r=await fetch('/api/v1/llm/traces?limit=50');
     const d=await r.json();
@@ -112,26 +168,10 @@ async function loadTraces(){
       `<div class="stat" style="flex:0 0 auto;min-width:80px"><span class="val" style="font-size:0.82rem">${st.calls}</span><span class="lbl">${a} <span style="font-size:0.55rem">${st.avg_latency_ms}ms</span></span></div>`
     ).join('');
     const traces=d.traces||[];
-    let html='';
-    traces.reverse().forEach((t,i)=>{
-      const idx=traces.length-1-i;
-      html+=`<tr>
-        <td>${new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false})}</td>
-        <td>${t.agent}</td>
-        <td style="font-size:0.64rem;color:var(--muted)">${t.provider}/${t.model}</td>
-        <td>${t.prompt_tokens_est}+${t.response_tokens_est}</td>
-        <td>${t.latency_ms}ms</td>
-        <td class="${t.success?'trace-ok':'trace-err'}">${t.success?'OK':(t.error||'ERR').substring(0,40)}</td>
-        <td><span class="trace-expand" onclick="toggleTrace(${idx})">view</span></td>
-      </tr>`;
-      html+=`<tr class="trace-detail" id="trace-${idx}" style="display:none"><td colspan="7"><div class="trace-detail-inner">
-        <div><h5>Request (prompt)</h5><pre>${escHtml(t.prompt||'(empty)')}</pre></div>
-        <div><h5>Response</h5><pre>${escHtml(t.response||'(empty)')}</pre></div>
-      </div></td></tr>`;
-    });
+    traces.reverse();
     _allTraces=traces;
-    filterTraces();
-    // build snapshot
+    buildTraceTable(traces);
+
     const calls=traces.length;
     const avgLat=traces.length?Math.round(traces.reduce((x,t)=>x+(t.latency_ms||0),0)/traces.length):0;
     const tokens=traces.reduce((x,t)=>x+(t.prompt_tokens_est||0)+(t.response_tokens_est||0),0);
@@ -147,40 +187,7 @@ async function loadTraces(){
     drawSpark('latency-spark',_snapshots.map(s=>s.avgLat),'var(--warn)');
     drawSpark('token-spark',_snapshots.map(s=>s.tokens),'var(--focus)');
     drawSpark('error-spark',_snapshots.map(s=>s.errRate),'var(--err)');
-  }catch(e){el.innerHTML='<tr><td colspan="6" style="color:var(--err);text-align:center">Error loading traces</td></tr>'}
-}
-function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function toggleTrace(i){const el=document.getElementById('trace-'+i);el.style.display=el.style.display==='none'?'':'none';}
-function filterTraces(){
-  const q=(document.getElementById('trace-filter').value||'').toLowerCase();
-  const errsOnly=document.getElementById('filter-errors').checked;
-  const filtered=_allTraces.filter(t=>{
-    if(errsOnly&&t.success)return false;
-    if(q){
-      const hay=(t.agent+' '+t.provider+' '+t.model+' '+t.error+' '+t.prompt).toLowerCase();
-      if(!hay.includes(q))return false;
-    }
-    return true;
-  });
-  const el=document.getElementById('trace-body');
-  let html='';
-  filtered.forEach((t,i)=>{
-    const idx=_allTraces.indexOf(t);
-    html+=`<tr>
-      <td>${new Date(t.timestamp).toLocaleTimeString('en-IN',{hour12:false})}</td>
-      <td>${t.agent}</td>
-      <td style="font-size:0.64rem;color:var(--muted)">${t.provider}/${t.model}</td>
-      <td>${t.prompt_tokens_est}+${t.response_tokens_est}</td>
-      <td>${t.latency_ms}ms</td>
-      <td class="${t.success?'trace-ok':'trace-err'}">${t.success?'OK':(t.error||'ERR').substring(0,40)}</td>
-      <td><span class="trace-expand" onclick="toggleTrace(${idx})">view</span></td>
-    </tr>`;
-    html+=`<tr class="trace-detail" id="trace-${idx}" style="display:none"><td colspan="7"><div class="trace-detail-inner">
-      <div><h5>Request (prompt)</h5><pre>${escHtml(t.prompt||'(empty)')}</pre></div>
-      <div><h5>Response</h5><pre>${escHtml(t.response||'(empty)')}</pre></div>
-    </div></td></tr>`;
-  });
-  el.innerHTML=html||'<tr><td colspan="7" style="color:var(--muted);text-align:center">No traces match filter</td></tr>';
+  }catch(e){document.getElementById('trace-table-container').innerHTML='<div class="pt-empty">Error loading traces</div>'}
 }
 load();setInterval(loadTraces,15000);
 </script>

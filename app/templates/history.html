@@ -1,32 +1,25 @@
 {% block content %}
 <style>
   .history-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:24px}
-  .search-input{width:160px}
+  .history-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .history-toolbar select{min-height:34px;font-size:0.72rem}
 </style>
 
 <header>
   <h1>Trade History <span class="muted">persisted in PostgreSQL</span></h1>
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <div class="history-toolbar">
     <span id="status" style="font-size:0.64rem;color:var(--muted)"></span>
-    <input type="text" id="filter-ticker" placeholder="Filter ticker..." oninput="render()" aria-label="Filter by ticker" class="search-input" style="text-transform:uppercase">
     <select id="filter-limit" onchange="loadHistory()"><option value="100">100</option><option value="250">250</option><option value="500">500</option></select>
     <button class="btn-secondary" onclick="exportCSV()" style="font-size:0.72rem;min-height:32px;padding:6px 10px">Export CSV</button>
   </div>
 </header>
 
 <div class="history-stats" id="summary-row"></div>
-
-<div class="tbl-wrap">
-  <table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>P&L ₹</th><th>Status</th></tr></thead>
-  <tbody id="history-body"><tr><td colspan="9" style="color:var(--muted);text-align:center">Loading...</td></tr></tbody></table>
-</div>
-
-<div class="pagination" id="history-pager"></div>
+<div id="history-table"></div>
 {% endblock %}
 <script>
-const PAGE_SIZE=20;
 let allTrades=[];
-let currentPage=0;
+let historyTable=null;
 
 async function loadHistory(){
   document.getElementById('status').textContent='Loading...';
@@ -34,7 +27,7 @@ async function loadHistory(){
   try{const r=await fetch('/api/v1/history?limit='+limit);const d=await r.json();
     allTrades=d.trades||[];
     renderSummary(d.summary);
-    render();
+    renderTable();
     document.getElementById('status').textContent=allTrades.length+' trades';
   }catch(e){document.getElementById('status').textContent='Error'}
 }
@@ -52,20 +45,50 @@ function renderSummary(s){
     <div class="stat"><span class="val">₹${(s.volume||0).toFixed(0)}</span><span class="lbl">Volume</span></div>`;
 }
 
-function render(){
-  const q=(document.getElementById('filter-ticker').value||'').toUpperCase();
-  const filtered=q?allTrades.filter(t=>t.ticker.toUpperCase().includes(q)):allTrades;
-  const total=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));
-  if(currentPage>=total)currentPage=0;
-  const start=currentPage*PAGE_SIZE;
-  const slice=filtered.slice(start,start+PAGE_SIZE);
+function renderTable(){
+  const columns=[
+    {key:'time',label:'Time',width:'150px'},
+    {key:'ticker',label:'Tkr'},
+    {key:'dir',label:'Dir',width:'50px'},
+    {key:'qty',label:'Qty',width:'50px'},
+    {key:'entry_price',label:'Entry',width:'80px'},
+    {key:'exit_price',label:'Exit',width:'80px'},
+    {key:'pnl',label:'P&L %',width:'80px'},
+    {key:'pnl_rupee',label:'P&L ₹',width:'90px'},
+    {key:'status',label:'Status',width:'70px'}
+  ];
 
-  const t=document.getElementById('history-body');
-  if(!slice.length){t.innerHTML='<tr><td colspan="9" style="color:var(--muted);text-align:center">No trades match</td></tr>';document.getElementById('history-pager').innerHTML='';return}
-  t.innerHTML=slice.map(tr=>`<tr><td>${(tr.time||'').slice(0,19)}</td><td>${tr.ticker}</td><td>${tr.dir}</td><td>${tr.qty}</td><td>₹${(tr.entry_price||0).toFixed(0)}</td><td>₹${(tr.exit_price||tr.entry_price||0).toFixed(0)}</td><td style="color:${(tr.pnl||0)>0?'var(--accent)':'var(--err)'}">${(tr.pnl>0?'+':'')+(tr.pnl||0).toFixed(2)}%</td><td style="color:${(tr.pnl||0)>0?'var(--accent)':'var(--err)'}">${(tr.pnl>0?'+':'')}₹${Math.abs(tr.pnl||0).toFixed(0)}</td><td>${tr.status||'filled'}</td></tr>`).join('');
+  const rows=allTrades.map(t=>({
+    time:(t.time||'').slice(0,19),
+    ticker:t.ticker,
+    dir:t.dir,
+    qty:t.qty,
+    entry_price:'₹'+(t.entry_price||0).toFixed(0),
+    exit_price:'₹'+(t.exit_price||t.entry_price||0).toFixed(0),
+    pnl:(t.pnl>0?'+':'')+(t.pnl||0).toFixed(2)+'%',
+    pnl_rupee:(t.pnl>0?'+':'')+'₹'+Math.abs(t.pnl||0).toFixed(0),
+    pnl_raw:t.pnl||0,
+    status:t.status||'filled'
+  }));
 
-  const pager=document.getElementById('history-pager');
-  pager.innerHTML=`<button onclick="currentPage=Math.max(0,currentPage-1);render()" ${currentPage===0?'disabled':''}>Prev</button><span>${currentPage+1} / ${total}</span><button onclick="currentPage=Math.min(total-1,currentPage+1);render()" ${currentPage>=total-1?'disabled':''}>Next</button>`;
+  historyTable=new PremiumTable('history-table',{
+    columns,
+    data:rows,
+    pageSize:20,
+    searchPlaceholder:'Search ticker, status...',
+    emptyMessage:'No trades found',
+    renderCell:function(key,val,row){
+      if(key==='pnl'||key==='pnl_rupee'){
+        const c=row.pnl_raw>0?'var(--accent)':'var(--err)';
+        return `<span style="color:${c}">${val}</span>`;
+      }
+      if(key==='dir'){
+        const cls=t.dir==='BUY'?'tag green':'tag red';
+        return `<span class="${cls}">${val}</span>`;
+      }
+      return val;
+    }
+  });
 }
 
 function exportCSV(){

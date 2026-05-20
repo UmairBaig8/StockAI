@@ -77,18 +77,22 @@
         <!-- Watchlist -->
         <div class="card half">
           <h2>Watchlist</h2>
-          <div style="overflow-x:auto">
-            <table><thead><tr><th>Tkr</th><th>LTP</th><th>Ch%</th><th>RSI</th><th></th></tr></thead>
-            <tbody id="watch-body"><tr><td colspan="5" style="color:var(--muted)">Loading...</td></tr></tbody></table>
+          <div class="premium-table-wrap">
+            <div class="pt-table-scroll" style="max-height:280px">
+              <table class="pt-table"><thead><tr><th class="pt-th">Tkr</th><th class="pt-th">LTP</th><th class="pt-th">Ch%</th><th class="pt-th">RSI</th><th class="pt-th"></th></tr></thead>
+              <tbody class="pt-tbody" id="watch-body"><tr><td colspan="5" class="pt-empty">Loading...</td></tr></tbody></table>
+            </div>
           </div>
         </div>
 
         <!-- Recent Trades -->
         <div class="card half">
           <h2>Recent Trades</h2>
-          <div style="overflow-x:auto">
-            <table><thead><tr><th>Time</th><th>Tkr</th><th>Dir</th><th>Qty</th><th>@</th><th>P&L</th></tr></thead>
-            <tbody id="trades-body"><tr><td colspan="6" style="color:var(--muted)">No trades</td></tr></tbody></table>
+          <div class="premium-table-wrap">
+            <div class="pt-table-scroll" style="max-height:280px">
+              <table class="pt-table"><thead><tr><th class="pt-th">Time</th><th class="pt-th">Tkr</th><th class="pt-th">Dir</th><th class="pt-th">Qty</th><th class="pt-th">@</th><th class="pt-th">P&L</th></tr></thead>
+              <tbody class="pt-tbody" id="trades-body"><tr><td colspan="6" class="pt-empty">No trades</td></tr></tbody></table>
+            </div>
           </div>
         </div>
 

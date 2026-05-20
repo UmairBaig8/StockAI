@@ -276,7 +276,7 @@ async def place_order(request: Request):
 async def cancel_order(order_id: str):
     return JSONResponse({"order_id": order_id, "status": "Cancelled", "message": "Order cancelled"})
 
-return app
+    return app
 
 
 app = create_app()

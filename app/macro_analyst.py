@@ -50,4 +50,4 @@ class MacroAnalyst:
             return data
         except Exception as e:
             logger.error(f"Macro analysis failed: {e}")
-            return {"overall_sentiment": "Cautious", "nifty_outlook": "Range-bound", "confidence": 0.3, "key_themes": [], "risk_factors": [], "sectors_to_watch": [], "fii_dii_sentiment": "Neutral", "volatility_forecast": "Moderate", "summary": "Analysis failed."}
+            return {"overall_sentiment": "Cautious", "nifty_outlook": "Range-bound", "risk_level": "HIGH", "risk": "HIGH", "outlook": "BEARISH", "confidence": 0.3, "key_themes": [], "risk_factors": ["Macro analysis service unavailable — defaulting to conservative"], "sectors_to_watch": [], "fii_dii_sentiment": "Neutral", "volatility_forecast": "Moderate", "summary": "Analysis failed. Defaulting to conservative stance."}

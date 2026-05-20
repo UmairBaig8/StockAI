@@ -284,6 +284,23 @@ class StrategyAgent:
                     best_price = prices[-1]
 
             if best_ticker and best_price > 0 and best_score > -500:
+                # Pre-trade safety checks for forced/rotation BUY (same as natural signals)
+                if not await self._check_advocate(best_ticker, "BUY", 0, best_price, "forced-best-pick"):
+                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by advocate")
+                    return
+                if await self._check_memory(best_ticker, self._calc_rsi(list(self.price_history[best_ticker]))):
+                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by memory")
+                    return
+                if await self._check_researcher(best_ticker):
+                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by researcher")
+                    return
+                if await self._check_sentiment(best_ticker):
+                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by sentiment")
+                    return
+                if await self._check_macro():
+                    logger.info(f"Strategy: forced BUY {best_ticker} BLOCKED by macro")
+                    return
+
                 notional = wallet_instance.available * (self.max_position_pct / 100)
                 qty = max(1, int(notional / best_price))
                 rsi = self._calc_rsi(list(self.price_history[best_ticker]))
@@ -604,7 +621,7 @@ class StrategyAgent:
                 return data.get("verdict") != "BLOCK"
         except Exception as e:
             logger.warning(f"Advocate check failed for {ticker}: {e}")
-            return True  # Allow if advocate unavailable
+            return False  # BLOCK if advocate unavailable (safe default)
 
     async def _check_memory(self, ticker: str, rsi: float) -> bool:
         try:
@@ -652,7 +669,7 @@ class StrategyAgent:
                 return False
         except Exception as e:
             logger.debug(f"Researcher check skipped for {ticker}: {e}")
-            return False  # Allow if unavailable
+            return True  # BLOCK if researcher unavailable (safe default)
 
     async def _check_sentiment(self, ticker: str) -> bool:
         """Check Sentiment agent — BLOCK if Fear & Greed Index < 30 (extreme fear)."""
@@ -693,7 +710,7 @@ class StrategyAgent:
                 return False
         except Exception as e:
             logger.debug(f"Macro check skipped: {e}")
-            return False
+            return True  # BLOCK if macro unavailable (safe default)
 
     async def _publish_trade(self, trade: dict):
         try:

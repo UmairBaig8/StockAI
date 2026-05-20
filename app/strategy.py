@@ -271,20 +271,31 @@ class StrategyAgent:
 
     async def _run_pre_trade_checks(self, ticker: str, direction: str, qty: int, price: float, reason: str, rsi: float) -> dict[str, bool | str]:
         """Run all 5 pre-trade guards in parallel. Returns {'blocked': True/False, 'by': 'agent_name'}."""
-        results = await asyncio.gather(
-            self._check_advocate(ticker, direction, qty, price, reason),
-            self._check_memory(ticker, rsi),
-            self._check_researcher(ticker),
-            self._check_sentiment(ticker),
-            self._check_macro(),
-            return_exceptions=True,
-        )
+        # For forced/best-pick trades, skip LLM guards (advocate, researcher, macro) — rely on scoring + indicators
+        if "forced" in reason or "best" in reason:
+            results = await asyncio.gather(
+                self._check_memory(ticker, rsi),
+                self._check_sentiment(ticker),
+                return_exceptions=True,
+            )
+            guards = ["memory", "sentiment"]
+            exceptions_fatal = set()
+        else:
+            results = await asyncio.gather(
+                self._check_advocate(ticker, direction, qty, price, reason),
+                self._check_memory(ticker, rsi),
+                self._check_researcher(ticker),
+                self._check_sentiment(ticker),
+                self._check_macro(),
+                return_exceptions=True,
+            )
+            guards = ["advocate", "memory", "researcher", "sentiment", "macro"]
+            exceptions_fatal = {"advocate", "researcher", "macro"}
 
-        guards = ["advocate", "memory", "researcher", "sentiment", "macro"]
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 logger.warning(f"Pre-trade check {guards[i]} failed for {ticker}: {result}")
-                if guards[i] in ("advocate", "researcher", "macro"):
+                if guards[i] in exceptions_fatal:
                     return {"blocked": True, "by": guards[i]}
                 continue
             if guards[i] == "advocate" and not result:

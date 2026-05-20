@@ -1,17 +1,67 @@
 {% block content %}
 <style>
-  .section b{color:var(--fg)}
   .ticker-chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 24px}
   .ticker-chip{padding:8px 14px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:11px;cursor:pointer;font-weight:700;font-size:0.78rem;color:var(--fg);transition:all .18s var(--ease);letter-spacing:-0.01em;position:relative;user-select:none}
   .ticker-chip:hover{transform:translateY(-1px);border-color:var(--accent);box-shadow:0 0 0 1px rgba(0,255,136,0.18)}
   .ticker-chip.loading{border-color:var(--accent);background:var(--accent-soft);pointer-events:none;animation:pulse-border 1.2s ease-in-out infinite}
   .ticker-chip.loading::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:8px;animation:pulse 1s ease-in-out infinite}
+  .ticker-chip.active{border-color:var(--accent);background:var(--accent-soft)}
   @keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,0.3)}50%{box-shadow:0 0 0 4px rgba(0,255,136,0.08)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
   .ticker-chips-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px}
+
+  .research-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .research-grid .wide{grid-column:1/-1}
+
+  .price-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .price-big{font-size:1.8rem;font-weight:800;letter-spacing:-0.02em}
+  .price-change{font-size:0.9rem;font-weight:700;padding:4px 10px;border-radius:8px}
+  .price-change.up{color:var(--accent);background:rgba(0,255,136,0.1)}
+  .price-change.down{color:var(--err);background:rgba(255,77,94,0.1)}
+
+  .ai-verdict{text-align:center;padding:20px 16px}
+  .verdict-badge{display:inline-block;padding:6px 18px;border-radius:20px;font-size:0.85rem;font-weight:800;letter-spacing:0.04em;margin-bottom:12px}
+  .verdict-badge.LONG{color:var(--accent);background:rgba(0,255,136,0.12);border:1px solid rgba(0,255,136,0.3)}
+  .verdict-badge.SHORT{color:var(--err);background:rgba(255,77,94,0.12);border:1px solid rgba(255,77,94,0.3)}
+  .verdict-badge.AVOID{color:var(--warn);background:rgba(255,170,0,0.12);border:1px solid rgba(255,170,0,0.3)}
+  .confidence-bar{width:100%;height:6px;background:var(--surface-3);border-radius:3px;overflow:hidden;margin:8px 0}
+  .confidence-fill{height:100%;border-radius:3px;transition:width .6s var(--ease)}
+  .confidence-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+
+  .tech-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .tech-item{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:10px;padding:10px 12px}
+  .tech-item .lbl{font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+  .tech-item .val{font-size:0.95rem;font-weight:700;margin-top:2px}
+
+  .ai-summary{font-size:0.85rem;line-height:1.6;color:var(--fg);margin-bottom:16px;padding:12px 16px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:0 10px 10px 0}
+  .ai-factors{list-style:none;padding:0}
+  .ai-factors li{padding:6px 0;font-size:0.8rem;color:var(--fg);border-bottom:1px solid var(--border-soft);display:flex;align-items:flex-start;gap:8px}
+  .ai-factors li:last-child{border-bottom:none}
+  .ai-factors li::before{content:'◆';color:var(--accent);font-size:0.55rem;margin-top:4px;flex-shrink:0}
+  .ai-risks li::before{content:'⚠';color:var(--warn);font-size:0.65rem}
+  .ai-reasoning{font-size:0.78rem;line-height:1.6;color:var(--muted);margin-top:12px;padding:12px;background:var(--surface-2);border-radius:10px}
+
+  .news-item{padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:0.78rem}
+  .news-item:last-child{border-bottom:none}
+  .news-item a{color:var(--fg);text-decoration:none;transition:color .15s}
+  .news-item a:hover{color:var(--accent)}
+  .news-item .news-time{font-size:0.6rem;color:var(--muted);margin-top:2px}
+
+  .pcr-display{text-align:center;padding:16px}
+  .pcr-value{font-size:1.6rem;font-weight:800}
+  .pcr-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:4px}
+
+  .loading-overlay{display:flex;align-items:center;justify-content:center;padding:60px 20px;flex-direction:column;gap:12px}
+  .spinner{width:24px;height:24px;border:3px solid var(--border-soft);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loading-text{font-size:0.8rem;color:var(--muted)}
+
+  .section-title{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+  .section-title::before{content:'';width:3px;height:12px;background:var(--accent);border-radius:2px}
 </style>
 
 <header>
-  <h1>Research <span class="muted">deep-dive per ticker</span></h1>
+  <h1>Research <span class="muted">AI-powered deep-dive</span></h1>
   <div style="display:flex;gap:8px;align-items:center">
     <input type="text" id="ticker-input" placeholder="e.g. RELIANCE" aria-label="Ticker" style="text-transform:uppercase;width:180px" onkeydown="if(event.key==='Enter')analyze()">
     <button onclick="analyze()" aria-label="Analyze ticker">Analyze</button>
@@ -33,25 +83,18 @@ async function analyze(ticker){
   if(!ticker)return;
   document.getElementById('ticker-input').value=ticker;
 
-  if(loadingChip)loadingChip.classList.remove('loading');
+  if(loadingChip)loadingChip.classList.remove('loading','active');
   loadingChip=document.querySelector(`.ticker-chip[data-ticker="${ticker}"]`);
   if(loadingChip)loadingChip.classList.add('loading');
 
-  document.getElementById('results').innerHTML='<div class="loading">Analyzing '+ticker+'...</div>';
+  document.getElementById('results').innerHTML=`<div class="loading-overlay"><div class="spinner"></div><div class="loading-text">Analyzing ${ticker} — fetching data, news, and AI research...</div></div>`;
   try{
-    const results=await Promise.allSettled([
-      fetch('/api/v1/indicators/'+ticker).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
-      fetch('/api/v1/news?ticker='+ticker).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
-      fetch('/api/v1/options/'+ticker).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
-    ]);
-    const ind=results[0].status==='fulfilled'?results[0].value:{error:'Indicators unavailable'};
-    const news=results[1].status==='fulfilled'?results[1].value:{items:[]};
-    const opt=results[2].status==='fulfilled'?results[2].value:{};
-    if(ind.error&&!ind.price){document.getElementById('results').innerHTML='<div class="loading">⚠ '+ind.error+' (need more price data)</div>';return}
-    render(ticker,ind,news,opt);
-    const errs=results.filter(r=>r.status==='rejected').map(r=>r.reason.message);
-    if(errs.length){document.getElementById('results').innerHTML+='<div class="loading" style="margin-top:8px;font-size:0.75rem">⚠ Partial data: '+errs.join(', ')+'</div>'}
-  }catch(e){document.getElementById('results').innerHTML='<div class="loading">Error: '+e.message+'</div>'}
+    const r=await fetch('/api/v1/research/analyze/'+ticker);
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const data=await r.json();
+    render(data);
+    if(loadingChip){loadingChip.classList.remove('loading');loadingChip.classList.add('active')}
+  }catch(e){document.getElementById('results').innerHTML=`<div class="loading">Error: ${e.message}</div>`}
   if(loadingChip){loadingChip.classList.remove('loading');loadingChip=null}
 }
 
@@ -66,26 +109,85 @@ async function loadWatchlist(){
   }catch(e){chips.innerHTML='<span class="muted">Could not load watchlist</span>'}
 }
 
-function render(ticker,ind,news,opt){
-  const pcr=opt.pcr||opt.market_pcr?.pcr;const sent=opt.sentiment||opt.market_pcr?.sentiment||'neutral';
-  const reg=ind.regime||{};const mtf=ind.rsi_mtf||{};const macd=ind.macd||{};const bb=ind.bb||{};
-  let newsHtml='';if(news.items?.length){newsHtml='<div class="section"><b>News:</b><br>'+news.items.slice(0,3).map(i=>'· '+i.title).join('<br>')+'</div>'}
-  let optionsHtml='';if(pcr!=null&&opt.status!=='no_data'){optionsHtml='<div class="section"><b>Options PCR:</b> '+pcr+' <span class="tag '+sent+'">'+sent.toUpperCase()+'</span></div>'}
-  else if(!pcr&&opt.status!=='no_data'){optionsHtml='<div class="section muted"><b>Options:</b> No data (NSE may be closed)</div>'}
+function render(d){
+  const ind=d.indicators||{};
+  const ai=d.ai||{};
+  const news=d.news||[];
+  const opt=d.options||{};
+  const price=d.price||0;
+  const chg=d.change_pct||0;
+  const reg=ind.regime||{};
+  const mtf=ind.rsi_mtf||{};
+  const macd=ind.macd||{};
+  const bb=ind.bb||{};
+  const pcr=opt.pcr;
+  const sent=opt.sentiment||'neutral';
+  const confPct=Math.round((ai.confidence||0)*100);
+  const confColor=confPct>=70?'var(--accent)':confPct>=40?'var(--warn)':'var(--err)';
+
+  const rsiVal=ind.rsi||'--';
+  const rsiColor=rsiVal==='--'?'var(--muted)':rsiVal<30?'var(--accent)':rsiVal>70?'var(--err)':'var(--fg)';
+
   document.getElementById('results').innerHTML=`
-    <div class="card"><h3>${ticker} @ ₹${ind.price||'--'}</h3>
-      <div class="metric-row">
-        <div class="metric"><span class="val ${ind.change_pct>=0?'green':'red'}">${(ind.change_pct||0).toFixed(2)}%</span><span class="lbl">Change</span></div>
-        <div class="metric"><span class="val">${ind.rsi||'--'}</span><span class="lbl">RSI (1m)</span></div>
-        <div class="metric"><span class="val">${mtf['5m']||'--'}</span><span class="lbl">RSI (5m)</span></div>
-        <div class="metric"><span class="val">${mtf['15m']||'--'}</span><span class="lbl">RSI (15m)</span></div>
-        <div class="metric"><span class="val">${ind.momentum_5||0}%</span><span class="lbl">Momentum</span></div>
-      </div></div>
-    <div class="card"><h3>Indicators</h3>
-      <div class="section"><b>MACD:</b> Line ${macd.line?.toFixed(4)||'--'} | Signal ${macd.signal?.toFixed(4)||'--'} | Hist ${macd.histogram?.toFixed(4)||'--'}</div>
-      <div class="section"><b>Bollinger:</b> Lower ₹${bb.lower?.toFixed(1)||'--'} | Mid ₹${bb.mid?.toFixed(1)||'--'} | Upper ₹${bb.upper?.toFixed(1)||'--'}</div>
-      <div class="section"><b>Regime:</b> ${reg.regime||'--'} (ADX ${reg.adx||'--'}) | Volatility: ${reg.volatility||'--'} (ATR ${reg.atr_pct||'--'}%)</div>
-      ${newsHtml}${optionsHtml}
+    <div class="research-grid">
+      <div class="card">
+        <div class="section-title">Price & Performance</div>
+        <div class="price-header">
+          <span class="price-big">₹${price.toFixed(1)}</span>
+          <span class="price-change ${chg>=0?'up':'down'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span>
+        </div>
+        <div class="tech-grid">
+          <div class="tech-item"><div class="lbl">RSI (1m)</div><div class="val" style="color:${rsiColor}">${rsiVal}</div></div>
+          <div class="tech-item"><div class="lbl">RSI (5m)</div><div class="val">${mtf['5m']||'--'}</div></div>
+          <div class="tech-item"><div class="lbl">RSI (15m)</div><div class="val">${mtf['15m']||'--'}</div></div>
+          <div class="tech-item"><div class="lbl">Momentum 5d</div><div class="val">${ind.momentum_5||0}%</div></div>
+        </div>
+      </div>
+
+      <div class="card ai-verdict">
+        <div class="section-title" style="justify-content:center">AI Verdict</div>
+        <div class="verdict-badge ${ai.recommendation||'AVOID'}">${ai.recommendation||'N/A'}</div>
+        <div style="margin:8px 0"><span style="font-size:0.75rem;color:${ai.sentiment==='Bullish'?'var(--accent)':ai.sentiment==='Bearish'?'var(--err)':'var(--muted)'};font-weight:700">${ai.sentiment||'--'}</span></div>
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${confPct}%;background:${confColor}"></div></div>
+        <div class="confidence-label">Confidence: ${confPct}%</div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Technical Indicators</div>
+        <div class="tech-grid">
+          <div class="tech-item"><div class="lbl">MACD Line</div><div class="val">${macd.line!=null?macd.line.toFixed(4):'--'}</div></div>
+          <div class="tech-item"><div class="lbl">MACD Signal</div><div class="val">${macd.signal!=null?macd.signal.toFixed(4):'--'}</div></div>
+          <div class="tech-item"><div class="lbl">BB Lower</div><div class="val">₹${bb.lower!=null?bb.lower.toFixed(1):'--'}</div></div>
+          <div class="tech-item"><div class="lbl">BB Upper</div><div class="val">₹${bb.upper!=null?bb.upper.toFixed(1):'--'}</div></div>
+          <div class="tech-item"><div class="lbl">Regime</div><div class="val">${reg.regime||'--'}</div></div>
+          <div class="tech-item"><div class="lbl">ADX</div><div class="val">${reg.adx||'--'}</div></div>
+          <div class="tech-item"><div class="lbl">Volatility</div><div class="val">${reg.volatility||'--'}</div></div>
+          <div class="tech-item"><div class="lbl">ATR %</div><div class="val">${reg.atr_pct||'--'}%</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Options PCR</div>
+        ${pcr!=null?`
+        <div class="pcr-display">
+          <div class="pcr-value" style="color:${parseFloat(pcr)>1?'var(--accent)':'var(--err)'}">${parseFloat(pcr).toFixed(2)}</div>
+          <div class="pcr-label">${sent.toUpperCase()} Sentiment</div>
+        </div>`:'<div style="color:var(--muted);font-size:0.8rem;text-align:center;padding:20px">Options data unavailable</div>'}
+      </div>
+
+      <div class="card wide">
+        <div class="section-title">AI Analysis</div>
+        <div class="ai-summary">${ai.summary||'No analysis available.'}</div>
+        ${ai.key_factors?.length?`<div style="margin-bottom:16px"><div class="section-title">Key Factors</div><ul class="ai-factors">${ai.key_factors.map(f=>`<li>${f}</li>`).join('')}</ul></div>`:''}
+        ${ai.risk_flags?.length?`<div style="margin-bottom:16px"><div class="section-title">Risk Flags</div><ul class="ai-factors ai-risks">${ai.risk_flags.map(r=>`<li>${r}</li>`).join('')}</ul></div>`:''}
+        ${ai.reasoning?`<div class="ai-reasoning">${ai.reasoning}</div>`:''}
+      </div>
+
+      ${news.length?`
+      <div class="card wide">
+        <div class="section-title">Recent News</div>
+        ${news.map(n=>`<div class="news-item"><a href="${n.link||'#'}" target="_blank" rel="noopener">${n.title}</a>${n.published?`<div class="news-time">${n.published}</div>`:''}</div>`).join('')}
+      </div>`:''}
     </div>`;
 }
 

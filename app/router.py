@@ -383,6 +383,67 @@ async def get_watchlist():
     }
 
 
+# === AI Research Analysis ===
+
+@router.get("/research/analyze/{ticker}", response_model=dict)
+async def ai_research_analysis(
+    ticker: str,
+    researcher: ResearcherAgent = Depends(get_researcher),
+):
+    from .main import strategy as strategy_agent
+    from . import news_scraper, options_flow
+
+    ticker_upper = ticker.upper()
+    ticker_ns = ticker_upper + ".NS" if not ticker_upper.endswith(".NS") else ticker_upper
+
+    ind = strategy_agent.get_indicators(ticker_upper)
+    news_items = news_scraper.get_news_for_ticker(ticker_upper, limit=5)
+    opt = options_flow.get_market_pcr(ticker_upper)
+
+    reg = ind.get("regime", {})
+    macd = ind.get("macd", {})
+    bb = ind.get("bb", {})
+    rsi_mtf = ind.get("rsi_mtf", {})
+
+    tech_context = (
+        f"Price: ₹{ind.get('price', 0)} ({ind.get('change_pct', 0):.2f}%)\n"
+        f"RSI: 1m={ind.get('rsi', '--')}, 5m={rsi_mtf.get('5m', '--')}, 15m={rsi_mtf.get('15m', '--')}\n"
+        f"MACD: line={macd.get('line', '--')}, signal={macd.get('signal', '--')}, hist={macd.get('histogram', '--')}\n"
+        f"Bollinger: lower={bb.get('lower', '--')}, mid={bb.get('mid', '--')}, upper={bb.get('upper', '--')}\n"
+        f"Regime: {reg.get('regime', '--')}, ADX={reg.get('adx', '--')}, Volatility={reg.get('volatility', '--')}, ATR%={reg.get('atr_pct', '--')}\n"
+        f"Momentum 5d: {ind.get('momentum_5', 0)}%"
+    )
+
+    news_context = "\n".join([f"- {n['title']}" for n in news_items[:5]]) if news_items else "No recent news."
+    pcr_context = f"Options PCR: {opt.get('pcr', 'N/A')}, Sentiment: {opt.get('sentiment', 'neutral')}" if opt.get("status") != "no_data" else "Options data unavailable."
+
+    context = f"Technical Analysis:\n{tech_context}\n\nRecent News:\n{news_context}\n\nOptions Data:\n{pcr_context}"
+
+    result = researcher.analyze(ResearchRequest(
+        ticker=ticker_upper,
+        sector="N/A",
+        context=context,
+    ))
+
+    return {
+        "ticker": ticker_upper,
+        "price": ind.get("price"),
+        "change_pct": ind.get("change_pct"),
+        "indicators": ind,
+        "news": news_items[:5],
+        "options": opt,
+        "ai": {
+            "sentiment": result.sentiment.value,
+            "confidence": result.confidence,
+            "summary": result.summary,
+            "key_factors": result.key_factors,
+            "risk_flags": result.risk_flags,
+            "recommendation": result.trade_recommendation,
+            "reasoning": result.reasoning,
+        }
+    }
+
+
 # === Ticker Discovery ===
 
 @router.post("/tickers/discover", response_model=dict)

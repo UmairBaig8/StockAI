@@ -144,6 +144,7 @@ class DashTrade(BaseModel):
     exit_price: float = 0
     pnl: float
     status: str
+    reason: str = ""
 
 
 class DashSummary(BaseModel):

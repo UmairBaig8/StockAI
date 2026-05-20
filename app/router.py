@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from .config import Settings, get_settings
 from .events import store as event_store
@@ -303,7 +304,7 @@ async def log_trade(trade: DashTrade, store: VectorStore = Depends(get_store)):
         await db.log_trade(
             trade.ticker, trade.dir, trade.qty, trade.entry_price,
             getattr(trade, 'exit_price', getattr(trade, 'entry_price', 0)),
-            trade.pnl or 0, trade.status, "",
+            trade.pnl or 0, trade.status, getattr(trade, 'reason', '') or '',
         )
     except Exception as e:
         logger.warning(f"DB trade log skipped: {e}")
@@ -499,6 +500,12 @@ async def daily_report(days: int = 30):
         "weekly": await _db.get_weekly_summary(12),
         "drawdown": max((e.get("drawdown_pct", 0) for e in equity), default=0),
     }
+
+
+@router.get("/report/day/{date}")
+async def day_detail(date: str):
+    from . import db as _db
+    return JSONResponse(content=await _db.get_day_detail(date))
 
 
 # === Indicators (debug) ===

@@ -18,6 +18,21 @@
   .heatmap-label{font-size:0.48rem;color:var(--muted);text-align:center}
   .section h3{font-size:0.78rem;color:var(--fg);margin:4px 0 8px;display:flex;align-items:center;gap:8px;font-weight:700}
   .section h3 span{font-weight:500;color:var(--muted);font-size:0.64rem}
+  .daily-row{cursor:pointer;transition:background .1s}
+  .daily-row:hover{background:rgba(0,255,136,0.06)}
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;justify-content:center;align-items:flex-start;padding:40px 16px;overflow-y:auto}
+  .modal-overlay.open{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border-soft);border-radius:16px;max-width:900px;width:100%;padding:20px;position:relative}
+  .modal-close{position:absolute;top:12px;right:16px;background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer}
+  .modal-close:hover{color:var(--fg)}
+  .modal h2{font-size:0.9rem;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .modal h2 .pnl{font-size:0.75rem;font-weight:600}
+  .mini-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px;margin-bottom:16px}
+  .mini-card{background:rgba(8,9,13,0.4);border-radius:8px;padding:8px;text-align:center}
+  .mini-card .v{font-size:0.85rem;font-weight:700}
+  .mini-card .l{font-size:0.55rem;color:var(--muted)}
+  .modal .tbl-wrap{margin-bottom:12px}
+  .modal .section-title{font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin:12px 0 6px;letter-spacing:0.05em}
 </style>
 
 <header>
@@ -75,6 +90,26 @@
     <tbody id="weekly-body"><tr><td colspan="7" style="color:var(--muted)">Loading...</td></tr></tbody></table></div>
   </div>
 </div>
+
+<div class="modal-overlay" id="day-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h2 id="modal-title">Day Detail</h2>
+    <div class="mini-cards" id="modal-cards"></div>
+    <div class="section-title">Trades</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L%</th><th>Signal</th></tr></thead>
+    <tbody id="modal-trades"></tbody></table></div>
+    <div class="section-title">By Ticker</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Ticker</th><th>Trades</th><th>W/L</th><th>P&L</th></tr></thead>
+    <tbody id="modal-tickers"></tbody></table></div>
+    <div class="section-title">By Hour</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Hour</th><th>Trades</th><th>W/L</th><th>P&L</th></tr></thead>
+    <tbody id="modal-hourly"></tbody></table></div>
+    <div class="section-title">By Strategy</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Strategy</th><th>Trades</th><th>W/L</th><th>P&L</th></tr></thead>
+    <tbody id="modal-strategies"></tbody></table></div>
+  </div>
+</div>
 {% endblock %}
 <script>
 let reportData=null;
@@ -118,7 +153,7 @@ function renderEquity(){
 }
 function renderDaily(){
   const h=reportData.daily_history||[];
-  document.getElementById('daily-body').innerHTML=h.map(d=>`<tr><td>${d.date}</td><td>${d.total_trades}</td><td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td><td>${d.win_rate}%</td><td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${Math.round(d.pnl).toLocaleString('en-IN')}</td><td style="color:var(--accent)">${d.best_pnl>0?'+':''}${d.best_pnl}%</td><td style="color:var(--err)">${d.worst_pnl}%</td><td><span style="color:var(--accent)">+${d.avg_win}%</span>/<span style="color:var(--err)">${d.avg_loss}%</span></td><td style="color:${d.profit_factor>=1.5?'var(--accent)':d.profit_factor>=1?'var(--muted)':'var(--err)'}">${d.profit_factor}</td></tr>`).join('');
+  document.getElementById('daily-body').innerHTML=h.map(d=>`<tr class="daily-row" onclick="openDay('${d.date}')"><td>${d.date}</td><td>${d.total_trades}</td><td><span class="tag green">${d.wins}W</span> <span class="tag red">${d.losses}L</span></td><td>${d.win_rate}%</td><td style="color:${d.pnl>=0?'var(--accent)':'var(--err)'}">${d.pnl>=0?'+':''}₹${Math.round(d.pnl).toLocaleString('en-IN')}</td><td style="color:var(--accent)">${d.best_pnl>0?'+':''}${d.best_pnl}%</td><td style="color:var(--err)">${d.worst_pnl}%</td><td><span style="color:var(--accent)">+${d.avg_win}%</span>/<span style="color:var(--err)">${d.avg_loss}%</span></td><td style="color:${d.profit_factor>=1.5?'var(--accent)':d.profit_factor>=1?'var(--muted)':'var(--err)'}">${d.profit_factor}</td></tr>`).join('');
 }
 function renderTickers(){
   const t=reportData.tickers||[];
@@ -148,5 +183,31 @@ function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.trim().toLowerCase().startsWith(tab)));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('active',c.id==='tab-'+tab));
 }
+
+async function openDay(date){
+  const modal=document.getElementById('day-modal');
+  document.getElementById('modal-title').innerHTML=`<span>${date}</span> <span class="muted">loading...</span>`;
+  modal.classList.add('open');
+  try{
+    const r=await fetch('/api/v1/report/day/'+date);
+    const d=await r.json();
+    if(!d.summary){document.getElementById('modal-title').innerHTML=`<span>${date}</span> <span class="muted">— no trades</span>`;return}
+    const s=d.summary;
+    document.getElementById('modal-title').innerHTML=`<span>${date}</span> <span class="pnl" style="color:${s.pnl>=0?'var(--accent)':'var(--err)'}">${s.pnl>=0?'+':''}₹${Math.round(s.pnl).toLocaleString('en-IN')}</span>`;
+    document.getElementById('modal-cards').innerHTML=`
+      <div class="mini-card"><div class="v">${s.total_trades}</div><div class="l">Trades</div></div>
+      <div class="mini-card"><div class="v">${s.win_rate}%</div><div class="l">Win Rate</div></div>
+      <div class="mini-card"><div class="v"><span class="tag green">${s.wins}W</span> <span class="tag red">${s.losses}L</span></div><div class="l">W / L</div></div>
+      <div class="mini-card"><div class="v">${s.profit_factor>=999?'∞':s.profit_factor}</div><div class="l">Profit Factor</div></div>
+      ${s.best_trade?`<div class="mini-card"><div class="v" style="color:var(--accent)">${s.best_trade.ticker} +${s.best_trade.pnl_percent}%</div><div class="l">Best Trade</div></div>`:''}
+      ${s.worst_trade?`<div class="mini-card"><div class="v" style="color:var(--err)">${s.worst_trade.ticker} ${s.worst_trade.pnl_percent}%</div><div class="l">Worst Trade</div></div>`:''}`;
+    document.getElementById('modal-trades').innerHTML=d.trades.map(t=>`<tr><td style="color:var(--muted);font-size:0.65rem">${t.time}</td><td style="font-weight:700">${t.ticker}</td><td><span class="tag ${t.direction==='BUY'?'green':'red'}">${t.direction}</span></td><td>${t.qty}</td><td>₹${t.entry_price.toLocaleString('en-IN')}</td><td>₹${t.exit_price.toLocaleString('en-IN')}</td><td style="color:${t.pnl_percent>=0?'var(--accent)':'var(--err)'};font-weight:700">${t.pnl_percent>=0?'+':''}${t.pnl_percent}%</td><td style="color:var(--muted);font-size:0.6rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.reason}">${t.reason||'—'}</td></tr>`).join('');
+    document.getElementById('modal-tickers').innerHTML=d.tickers.map(t=>`<tr><td style="font-weight:700">${t.ticker}</td><td>${t.trades}</td><td><span class="tag green">${t.wins}W</span> <span class="tag red">${t.losses}L</span></td><td style="color:${t.pnl>=0?'var(--accent)':'var(--err)'};font-weight:700">${t.pnl>=0?'+':''}₹${Math.round(t.pnl).toLocaleString('en-IN')}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted)">—</td></tr>';
+    document.getElementById('modal-hourly').innerHTML=d.hourly.map(h=>`<tr><td>${h.hour}</td><td>${h.trades}</td><td><span class="tag green">${h.wins}W</span> <span class="tag red">${h.losses}L</span></td><td style="color:${h.pnl>=0?'var(--accent)':'var(--err)'};font-weight:700">${h.pnl>=0?'+':''}₹${Math.round(h.pnl).toLocaleString('en-IN')}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted)">—</td></tr>';
+    document.getElementById('modal-strategies').innerHTML=d.strategies.map(s=>`<tr><td style="font-weight:700">${s.strategy}</td><td>${s.trades}</td><td><span class="tag green">${s.wins}W</span> <span class="tag red">${s.losses}L</span></td><td style="color:${s.pnl>=0?'var(--accent)':'var(--err)'};font-weight:700">${s.pnl>=0?'+':''}₹${Math.round(s.pnl).toLocaleString('en-IN')}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted)">—</td></tr>';
+  }catch(e){document.getElementById('modal-title').innerHTML=`<span>${date}</span> <span style="color:var(--err)">Failed to load</span>`}
+}
+function closeModal(){document.getElementById('day-modal').classList.remove('open')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
 load();setInterval(load,120000);
 </script>

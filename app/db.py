@@ -2,7 +2,7 @@ import asyncpg
 import logging
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 logger = logging.getLogger(__name__)
 
@@ -397,6 +397,127 @@ async def get_strategy_stats(days: int = 30) -> list[dict]:
                 "pnl": round(float(r["total_pnl"]), 2),
             })
         return result
+
+
+async def get_day_detail(date_str: str) -> dict:
+    """Full breakdown for a specific day: trades, tickers, hourly, strategies."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        target_date = date.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+        rows = await conn.fetch("""
+            SELECT
+                ticker, direction, quantity, entry_price, exit_price,
+                pnl_percent, status, reason,
+                EXTRACT(HOUR FROM timestamp AT TIME ZONE 'Asia/Kolkata')::int as hour,
+                EXTRACT(MINUTE FROM timestamp AT TIME ZONE 'Asia/Kolkata')::int as minute,
+                timestamp AT TIME ZONE 'Asia/Kolkata' as ist_time
+            FROM trades
+            WHERE DATE(timestamp AT TIME ZONE 'Asia/Kolkata') = $1
+            ORDER BY timestamp
+        """, target_date)
+        if not rows:
+            return {"date": str(target_date), "trades": [], "summary": None}
+
+        trades = []
+        for r in rows:
+            trades.append({
+                "ticker": r["ticker"],
+                "direction": r["direction"],
+                "qty": r["quantity"],
+                "entry_price": round(float(r["entry_price"]), 2),
+                "exit_price": round(float(r["exit_price"]), 2),
+                "pnl_percent": round(float(r["pnl_percent"]), 2),
+                "status": r["status"],
+                "reason": r["reason"] or "",
+                "time": r["ist_time"].strftime("%H:%M") if r["ist_time"] else "",
+            })
+
+        total = len(trades)
+        wins = sum(1 for t in trades if t["pnl_percent"] > 0)
+        losses = sum(1 for t in trades if t["pnl_percent"] < 0)
+        gross_profit = sum(t["pnl_percent"] * t["entry_price"] * t["qty"] / 100 for t in trades if t["pnl_percent"] > 0)
+        gross_loss = sum(abs(t["pnl_percent"] * t["entry_price"] * t["qty"] / 100) for t in trades if t["pnl_percent"] < 0)
+        pf = abs(gross_profit / gross_loss) if gross_loss != 0 else (999 if gross_profit > 0 else 0)
+
+        summary = {
+            "date": str(target_date),
+            "total_trades": total,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round((wins / total * 100) if total > 0 else 0, 1),
+            "pnl": round(sum(t["pnl_percent"] * t["entry_price"] * t["qty"] / 100 for t in trades), 2),
+            "profit_factor": round(pf, 2),
+            "best_trade": max(trades, key=lambda t: t["pnl_percent"]) if trades else None,
+            "worst_trade": min(trades, key=lambda t: t["pnl_percent"]) if trades else None,
+        }
+
+        # Per-ticker for this day
+        ticker_map = {}
+        for t in trades:
+            k = t["ticker"]
+            if k not in ticker_map:
+                ticker_map[k] = {"ticker": k, "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0}
+            ticker_map[k]["trades"] += 1
+            if t["pnl_percent"] > 0:
+                ticker_map[k]["wins"] += 1
+            elif t["pnl_percent"] < 0:
+                ticker_map[k]["losses"] += 1
+            ticker_map[k]["pnl"] += t["pnl_percent"] * t["entry_price"] * t["qty"] / 100
+        tickers = sorted(ticker_map.values(), key=lambda x: x["pnl"], reverse=True)
+
+        # Per-hour for this day
+        hour_map = {}
+        for t in trades:
+            k = t["time"][:2] + ":00"
+            if k not in hour_map:
+                hour_map[k] = {"hour": k, "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0}
+            hour_map[k]["trades"] += 1
+            if t["pnl_percent"] > 0:
+                hour_map[k]["wins"] += 1
+            elif t["pnl_percent"] < 0:
+                hour_map[k]["losses"] += 1
+            hour_map[k]["pnl"] += t["pnl_percent"] * t["entry_price"] * t["qty"] / 100
+        hourly = sorted(hour_map.values(), key=lambda x: x["hour"])
+
+        # Per-strategy for this day
+        strat_map = {}
+        for t in trades:
+            reason = t["reason"]
+            if "MTF" in reason or "MACD" in reason:
+                cat = "MTF RSI + MACD"
+            elif "BB" in reason or "bounce" in reason or "overbought" in reason:
+                cat = "Bollinger Bands"
+            elif "Best opportunity" in reason or "best pick" in reason:
+                cat = "Forced (Best Pick)"
+            elif "Rotating" in reason or "weakest" in reason:
+                cat = "Forced (Rotate)"
+            elif "Take profit" in reason:
+                cat = "Take Profit"
+            elif "Stop loss" in reason:
+                cat = "Stop Loss"
+            elif "Trailing" in reason:
+                cat = "Trailing Stop"
+            else:
+                cat = "Other"
+            if cat not in strat_map:
+                strat_map[cat] = {"strategy": cat, "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "signals": []}
+            strat_map[cat]["trades"] += 1
+            if t["pnl_percent"] > 0:
+                strat_map[cat]["wins"] += 1
+            elif t["pnl_percent"] < 0:
+                strat_map[cat]["losses"] += 1
+            strat_map[cat]["pnl"] += t["pnl_percent"] * t["entry_price"] * t["qty"] / 100
+            strat_map[cat]["signals"].append(reason)
+        strategies = sorted(strat_map.values(), key=lambda x: x["pnl"], reverse=True)
+
+        return {
+            "date": str(target_date),
+            "trades": trades,
+            "summary": summary,
+            "tickers": tickers,
+            "hourly": hourly,
+            "strategies": strategies,
+        }
 
 
 async def get_weekly_summary(weeks: int = 12) -> list[dict]:

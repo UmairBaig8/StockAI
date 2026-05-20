@@ -49,8 +49,8 @@ Thumbs.db
 
 # Session logs
 session-*.md
-*.png
 *.har
+root-*.png
 
 # AWS
 *.pem

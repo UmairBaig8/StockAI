@@ -280,7 +280,13 @@ async def wallet_status():
 async def wallet_reset(capital: float = 100_000):
     global wallet_instance
     from .wallet import Wallet
+    from . import db
     wallet_instance = Wallet(initial_capital=capital)
+    # Persist reset to DB so restart doesn't reload old state
+    try:
+        await db.save_wallet(capital, capital, 0.0, 0.0, {})
+    except Exception as e:
+        logger.warning(f"Wallet reset DB save skipped: {e}")
     return wallet_instance.snapshot()
 
 

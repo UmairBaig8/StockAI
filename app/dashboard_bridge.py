@@ -53,7 +53,7 @@ class DashboardBridge:
         dead = []
         for ws in self.clients:
             try:
-                await ws.send_text(payload)
+                await asyncio.wait_for(ws.send_text(payload), timeout=2.0)
             except Exception:
                 dead.append(ws)
         for ws in dead:

@@ -72,7 +72,7 @@ def render_page(template_name: str, title: str, active: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{title}</title>
   <link rel="icon" href="data:image/svg+xml,{_ICON_SVG}" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/css/system.css">
+  <link rel="stylesheet" href="/static/css/system.css?v=3">
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to main content</a>

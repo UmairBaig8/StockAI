@@ -90,38 +90,54 @@ setInterval(()=>$('clock').textContent='IST '+ts(),1000);
 let eqData = [];
 let mkt = {};
 
-// ── Live dashboard via WebSocket (push) with HTTP fallback ──
-let _dws = null, _wsReconnectTimer = null, _fallbackTimer = null;
+// ── Dashboard WebSocket (push) — single connection, no duplicates ──
+let _dws = null, _dwTimer = null, _dwPoll = null;
 
-function connectDashboard(){
+function connectDashboard() {
+  // Prevent duplicates: skip if already open or connecting
   if (_dws && (_dws.readyState === WebSocket.OPEN || _dws.readyState === WebSocket.CONNECTING)) return;
-  if (_wsReconnectTimer) { clearTimeout(_wsReconnectTimer); _wsReconnectTimer = null; }
+  // Clean up any pending reconnect timer
+  if (_dwTimer) { clearTimeout(_dwTimer); _dwTimer = null; }
+  // Stop fallback polling when WS connects
+  if (_dwPoll) { clearTimeout(_dwPoll); _dwPoll = null; }
+
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   _dws = new WebSocket(`${scheme}://${location.host}/ws/dashboard`);
-  _dws.onopen = () => {
-    if (_fallbackTimer) { clearTimeout(_fallbackTimer); _fallbackTimer = null; }
-  };
+
   _dws.onmessage = e => {
-    try { const all = JSON.parse(e.data); if (all.type !== 'dashboard') return; renderDashboard(all); }
+    try { const all = JSON.parse(e.data); if (all.type === 'dashboard') renderDashboard(all); }
     catch(ex) {}
   };
-  _dws.onclose = () => { _dws = null; _wsReconnectTimer = setTimeout(connectDashboard, 3000); };
-  _dws.onerror = () => { _dws.close(); };
-  // Fallback: HTTP poll if WebSocket not connected in 4s
-  _fallbackTimer = setTimeout(() => {
-    if (!_dws || _dws.readyState !== WebSocket.OPEN) pollFallback();
-  }, 4000);
+
+  _dws.onclose = () => {
+    // Prevent double-fire: onerror→close→onclose would fire twice without this
+    if (!_dws) return;
+    _dws.onclose = null; _dws.onmessage = null; _dws = null;
+    // Single reconnect timer — never duplicate
+    if (!_dwTimer) _dwTimer = setTimeout(connectDashboard, 3000);
+    // Start HTTP fallback polling while WS is down
+    if (!_dwPoll) { pollFallback(); _dwPoll = setInterval(pollFallback, 4000); }
+  };
+
+  _dws.onerror = () => {}; // onclose always follows — don't call close() here
 }
 
-async function pollFallback(){
+// HTTP fallback when WebSocket can't connect
+async function pollFallback() {
+  if (_dws && _dws.readyState === WebSocket.OPEN) {
+    if (_dwPoll) { clearInterval(_dwPoll); _dwPoll = null; }
+    return;
+  }
   try { const r = await fetch('/api/v1/dash/all'); const all = await r.json(); renderDashboard(all); }
   catch(e) {}
-  // Keep polling every 3s until WebSocket connects
-  _fallbackTimer = setTimeout(() => {
-    if (!_dws || _dws.readyState !== WebSocket.OPEN) pollFallback();
-    else _fallbackTimer = null;
-  }, 3000);
 }
+
+// Clean up on page unload
+window.addEventListener('beforeunload', () => {
+  if (_dwTimer) clearTimeout(_dwTimer);
+  if (_dwPoll) clearInterval(_dwPoll);
+  if (_dws) { _dws.onclose = null; _dws.close(); _dws = null; }
+});
 
 function renderDashboard(all){
   // Services
@@ -193,9 +209,15 @@ function drawEquity(){
   svg.innerHTML=`<polyline fill="none" stroke="${eqData[eqData.length-1].v>=eqData[0].v?'#00ff88':'#ff4444'}" stroke-width="1.5" points="${pts}"/>`;
 }
 
-// ── Market watch (quotes via WebSocket) ──
-const ws=new WebSocket(`ws://${location.host}/ws/market`);
-ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='quote'){mkt[m.data.ticker]=m.data;renderWatch()}}catch(ex){}};
+// ── Market quotes via WebSocket ──
+(function(){
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${scheme}://${location.host}/ws/market`);
+  ws.onmessage = e => {
+    try { const m = JSON.parse(e.data); if (m.type === 'quote') { mkt[m.data.ticker] = m.data; renderWatch(); } }
+    catch(ex) {}
+  };
+})();
 function renderWatch(){
   const t=$('watch-body');const order=Object.keys(mkt).sort().slice(0,10);
   if(!order.length){t.innerHTML='<tr><td colspan="5" style="color:var(--muted)">Connecting...</td></tr>';return}

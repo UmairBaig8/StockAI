@@ -53,6 +53,98 @@ class StrategyAgent:
             self._redis = redis.Redis.from_url(self.redis_url)
         return self._redis
 
+    async def _save_price_history(self, ticker: str, prices: list[float]):
+        """Persist price history to Redis sorted set."""
+        try:
+            r = await self._get_redis()
+            key = f"ph:{ticker}"
+            pipe = r.pipeline()
+            pipe.delete(key)
+            if prices:
+                pipe.zadd(key, {str(i): p for i, p in enumerate(prices[-200:])})
+            pipe.expire(key, 86400)  # 24h TTL
+            await pipe.execute()
+        except Exception as e:
+            logger.debug(f"Failed to save price history for {ticker}: {e}")
+
+    async def _load_price_history(self) -> dict[str, list[float]]:
+        """Restore price history from Redis on startup."""
+        result = {}
+        try:
+            r = await self._get_redis()
+            keys = await r.keys("ph:*")
+            for key in keys:
+                ticker = key.decode().split(":", 1)[1]
+                scores = await r.zrange(key, 0, -1, withscores=True)
+                if scores:
+                    prices = [float(s) for _, s in sorted(scores, key=lambda x: x[1])]
+                    result[ticker] = prices
+                    self.price_history[ticker] = deque(prices, maxlen=200)
+            if result:
+                logger.info(f"Restored price history for {len(result)} tickers from Redis")
+        except Exception as e:
+            logger.debug(f"Failed to load price history from Redis: {e}")
+        return result
+
+    async def _save_risk_state(self):
+        """Persist risk gate state to Redis hash."""
+        try:
+            r = await self._get_redis()
+            now = asyncio.get_event_loop().time()
+            state = {
+                "consecutive_losses": str(self._consecutive_losses),
+                "loss_cooldown_until": str(self._loss_cooldown_until),
+                "daily_loss": str(self._daily_loss),
+                "daily_loss_date": self._daily_loss_date,
+                "ticker_losses": json.dumps(self._ticker_losses),
+                "ticker_cooldowns": json.dumps({
+                    k: v for k, v in self._ticker_cooldown_until.items() if v > now
+                }),
+                "highest_prices": json.dumps(self._highest_price),
+            }
+            await r.hset("strategy:risk", mapping=state)
+            await r.expire("strategy:risk", 86400)
+        except Exception as e:
+            logger.debug(f"Failed to save risk state: {e}")
+
+    async def _load_risk_state(self):
+        """Restore risk gate state from Redis on startup."""
+        try:
+            r = await self._get_redis()
+            state = await r.hgetall("strategy:risk")
+            if not state:
+                return
+            self._consecutive_losses = int(state.get(b"consecutive_losses", b"0").decode())
+            self._loss_cooldown_until = float(state.get(b"loss_cooldown_until", b"0").decode())
+            self._daily_loss = float(state.get(b"daily_loss", b"0").decode())
+            self._daily_loss_date = state.get(b"daily_loss_date", b"").decode()
+            ticker_losses = state.get(b"ticker_losses", b"{}").decode()
+            self._ticker_losses = json.loads(ticker_losses) if ticker_losses else {}
+            ticker_cooldowns = state.get(b"ticker_cooldowns", b"{}").decode()
+            self._ticker_cooldown_until = json.loads(ticker_cooldowns) if ticker_cooldowns else {}
+            highest_prices = state.get(b"highest_prices", b"{}").decode()
+            self._highest_price = json.loads(highest_prices) if highest_prices else {}
+            logger.info(f"Restored risk state from Redis: losses={self._consecutive_losses}, "
+                       f"cooldowns={len(self._ticker_cooldown_until)}, trailing={len(self._highest_price)}")
+        except Exception as e:
+            logger.debug(f"Failed to load risk state from Redis: {e}")
+
+    async def persist_state(self):
+        """Persist all runtime state (called periodically and on shutdown)."""
+        try:
+            # Save price history for all tickers
+            for ticker, prices in self.price_history.items():
+                await self._save_price_history(ticker, list(prices))
+            # Save risk gates
+            await self._save_risk_state()
+        except Exception as e:
+            logger.debug(f"Failed to persist strategy state: {e}")
+
+    async def restore_state(self):
+        """Restore all runtime state on startup."""
+        await self._load_price_history()
+        await self._load_risk_state()
+
     def _load_config(self, cfg: dict | None = None):
         if cfg is None:
             cfg = settings_store.current()
@@ -104,6 +196,10 @@ class StrategyAgent:
     async def run(self):
         logger.info("Strategy Agent started — scanning market for signals...")
         last_heartbeat = 0
+        last_persist = 0.0
+
+        # Restore state from Redis on startup
+        await self.restore_state()
 
         # Background: listen for trade results to track consecutive losses
         asyncio.create_task(self._listen_trade_results())
@@ -122,6 +218,11 @@ class StrategyAgent:
                 # Auto-discovery at scheduled IST hours (9, 10, 11, 12, 13, 14)
                 if is_open:
                     await self._maybe_discover()
+
+                # Persist state every 5 minutes
+                if now - last_persist > 300:
+                    await self.persist_state()
+                    last_persist = now
 
             # Skip signal scanning when market is closed
             if not is_open:

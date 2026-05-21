@@ -489,8 +489,8 @@ async def llm_health():
 
 @router.get("/llm/traces", response_model=dict)
 async def llm_traces(limit: int = 100):
-    from .llm.providers import get_traces
-    traces = get_traces(limit)
+    from .llm.providers import get_traces_with_db
+    traces = await get_traces_with_db(limit)
     # Aggregate stats
     agents = {}
     total_calls = len(traces)

@@ -18,7 +18,7 @@ _trace_buffer: deque[dict] = deque(maxlen=200)
 def _record_trace(agent: str, provider: str, model: str, prompt_chars: int,
                    response_chars: int, latency_ms: float, success: bool, error: str = "",
                    prompt_text: str = "", response_text: str = ""):
-    _trace_buffer.append({
+    trace = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "agent": agent,
         "provider": provider,
@@ -30,12 +30,41 @@ def _record_trace(agent: str, provider: str, model: str, prompt_chars: int,
         "error": error[:200] if error else "",
         "prompt": prompt_text[:1000] if prompt_text else "",
         "response": response_text[:2000] if response_text else "",
-    })
+    }
+    _trace_buffer.append(trace)
+    _persist_trace(trace)
+
+
+async def _persist_trace(trace: dict):
+    """Persist trace to PostgreSQL (fire-and-forget)."""
+    try:
+        import asyncio
+        from .db import save_llm_trace
+        asyncio.ensure_future(save_llm_trace(trace))
+    except Exception:
+        pass
 
 
 def get_traces(limit: int = 100) -> list[dict]:
     items = list(_trace_buffer)
     return items[-limit:]
+
+
+async def get_traces_with_db(limit: int = 100) -> list[dict]:
+    """Get traces from in-memory buffer, falling back to PostgreSQL for older entries."""
+    items = list(_trace_buffer)
+    if len(items) >= limit:
+        return items[-limit:]
+    # Need more from DB
+    try:
+        from .db import load_llm_traces
+        db_traces = await load_llm_traces(limit - len(items))
+        # Deduplicate: skip any DB traces already in memory buffer
+        mem_timestamps = {t["timestamp"] for t in items}
+        deduped = [t for t in db_traces if t["timestamp"] not in mem_timestamps]
+        return deduped + items
+    except Exception:
+        return items[-limit:] if items else []
 
 
 class LLMAdapter(ABC):

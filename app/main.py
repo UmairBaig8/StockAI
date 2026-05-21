@@ -102,7 +102,10 @@ def render_page(template_name: str, title: str, active: str) -> str:
 async def lifespan(app: FastAPI):
     from .wallet import wallet as w
     from .dashboard_bridge import services_bridge, dashboard_bridge, wallet_bridge
+    from .events import store as event_store
     await w.load_from_db()
+    await event_store.load_from_db()
+    await strategy.restore_state()
     asyncio.create_task(bridge.start())
     asyncio.create_task(strategy.run())
     asyncio.create_task(start_news_poller(900))
@@ -113,6 +116,7 @@ async def lifespan(app: FastAPI):
     logger.info("StockAI Memory Service ready (market + strategy + news + critic + memory)")
     yield
     bridge.stop()
+    await strategy.persist_state()
     logger.info("StockAI Memory Service shutting down")
 
 

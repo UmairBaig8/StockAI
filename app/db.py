@@ -64,6 +64,44 @@ async def _migrate():
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp DESC)
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id SERIAL PRIMARY KEY,
+                msg TEXT NOT NULL,
+                level TEXT NOT NULL DEFAULT 'info',
+                ticker TEXT DEFAULT '',
+                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC)
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS llm_traces (
+                id SERIAL PRIMARY KEY,
+                agent TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                prompt_tokens_est INTEGER NOT NULL DEFAULT 0,
+                response_tokens_est INTEGER NOT NULL DEFAULT 0,
+                latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+                success BOOLEAN NOT NULL DEFAULT TRUE,
+                error TEXT DEFAULT '',
+                prompt TEXT DEFAULT '',
+                response TEXT DEFAULT '',
+                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_llm_traces_timestamp ON llm_traces(timestamp DESC)
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
         # Ensure wallet has a row
         await conn.execute("""
             INSERT INTO wallet (id, initial_capital, available)
@@ -551,3 +589,108 @@ async def get_weekly_summary(weeks: int = 12) -> list[dict]:
             }
             for r in rows
         ]
+
+
+# ── Event store persistence ──
+
+async def save_event(msg: str, level: str = "info", ticker: str = ""):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO events (msg, level, ticker) VALUES ($1, $2, $3)",
+            msg, level, ticker,
+        )
+
+
+async def load_events(limit: int = 50) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT msg, level, ticker, timestamp FROM events ORDER BY timestamp DESC LIMIT $1",
+            limit,
+        )
+        return [
+            {"msg": r["msg"], "level": r["level"], "ticker": r["ticker"] or "", "timestamp": r["timestamp"]}
+            for r in rows
+        ]
+
+
+async def save_postmortem(rule: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO events (msg, level, ticker) VALUES ($1, 'postmortem', '')",
+            f"RULE: {rule}",
+        )
+
+
+async def load_recent_rules(limit: int = 10) -> list[str]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT msg FROM events WHERE level = 'postmortem' ORDER BY timestamp DESC LIMIT $1",
+            limit,
+        )
+        return [r["msg"].replace("RULE: ", "") for r in rows]
+
+
+# ── LLM trace persistence ──
+
+async def save_llm_trace(trace: dict):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO llm_traces
+               (agent, provider, model, prompt_tokens_est, response_tokens_est,
+                latency_ms, success, error, prompt, response)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+            trace["agent"], trace["provider"], trace["model"],
+            trace["prompt_tokens_est"], trace["response_tokens_est"],
+            trace["latency_ms"], trace["success"], trace.get("error", ""),
+            trace.get("prompt", ""), trace.get("response", ""),
+        )
+
+
+async def load_llm_traces(limit: int = 200) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT agent, provider, model, prompt_tokens_est, response_tokens_est,
+                      latency_ms, success, error, prompt, response, timestamp
+               FROM llm_traces ORDER BY timestamp DESC LIMIT $1""",
+            limit,
+        )
+        return [
+            {
+                "timestamp": r["timestamp"].isoformat() if r["timestamp"] else "",
+                "agent": r["agent"],
+                "provider": r["provider"],
+                "model": r["model"],
+                "prompt_tokens_est": r["prompt_tokens_est"],
+                "response_tokens_est": r["response_tokens_est"],
+                "latency_ms": r["latency_ms"],
+                "success": r["success"],
+                "error": r["error"] or "",
+                "prompt": r["prompt"] or "",
+                "response": r["response"] or "",
+            }
+            for r in rows
+        ]
+
+
+# ── Strategy state persistence ──
+
+async def save_strategy_state(key: str, value: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO strategy_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()",
+            key, value,
+        )
+
+
+async def load_strategy_state() -> dict[str, str]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT key, value FROM strategy_state")
+        return {r["key"]: r["value"] for r in rows}

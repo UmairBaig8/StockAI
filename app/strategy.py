@@ -33,6 +33,8 @@ class StrategyAgent:
         self._loss_cooldown_until = 0.0
         self._daily_loss = 0.0
         self._daily_loss_date = ""
+        self._ticker_losses: dict[str, list[float]] = {}
+        self._ticker_cooldown_until: dict[str, float] = {}
         self._http: httpx.AsyncClient | None = None
         self._redis = None
         settings_store.on_change(self._on_settings_change)
@@ -57,13 +59,13 @@ class StrategyAgent:
         self.signal_cooldown = int(cfg.get("signal_cooldown", 300))
         self.max_position_pct = float(cfg.get("position_size_pct", 5))
         self.max_positions = int(cfg.get("max_positions", 3))
-        self.take_profit_pct = float(cfg.get("take_profit_pct", 2.0))
-        self.stop_loss_pct = float(cfg.get("stop_loss_pct", 0.5))
+        self.take_profit_pct = float(cfg.get("take_profit_pct", 1.5))
+        self.stop_loss_pct = float(cfg.get("stop_loss_pct", 0.8))
         self.rsi_period = int(cfg.get("rsi_period", 14))
         self.rsi_oversold = float(cfg.get("rsi_oversold", 40))
         self.rsi_overbought = float(cfg.get("rsi_overbought", 70))
         self.min_drop_pct = float(cfg.get("min_drop_pct", 0.5))
-        self.force_trade_sec = int(cfg.get("force_trade_sec", 300))
+        self.force_trade_sec = int(cfg.get("force_trade_sec", 600))
         self.min_hold_time = int(cfg.get("min_hold_time", 300))
         self.min_price_delta_pct = float(cfg.get("min_price_delta_pct", 0.1))
         self.daily_loss_limit_pct = float(cfg.get("daily_loss_limit_pct", 2.0))
@@ -163,6 +165,15 @@ class StrategyAgent:
                 now = asyncio.get_event_loop().time()
                 if ticker in self.last_signal and now - self.last_signal[ticker] < self.signal_cooldown:
                     continue
+
+                # Per-ticker circuit breaker: skip tickers in cooldown
+                if ticker in self._ticker_cooldown_until and now < self._ticker_cooldown_until[ticker]:
+                    remaining = int(self._ticker_cooldown_until[ticker] - now)
+                    if remaining % 60 == 0:  # log every minute
+                        logger.debug(f"Strategy: {ticker} in cooldown, {remaining}s remaining")
+                    continue
+                else:
+                    self._ticker_cooldown_until.pop(ticker, None)  # clear expired cooldown
 
                 change_pct = ((current - prev) / prev) * 100 if prev > 0 else 0
                 rsi = self._calc_rsi(list(prices))
@@ -275,15 +286,16 @@ class StrategyAgent:
 
     async def _run_pre_trade_checks(self, ticker: str, direction: str, qty: int, price: float, reason: str, rsi: float) -> dict[str, bool | str]:
         """Run all 5 pre-trade guards in parallel. Returns {'blocked': True/False, 'by': 'agent_name'}."""
-        # For forced/best-pick trades, skip LLM guards (advocate, researcher, macro) — rely on scoring + indicators
+        # For forced/best-pick trades, still run researcher check (skip advocate + macro for speed)
         if "forced" in reason or "best" in reason:
             results = await asyncio.gather(
                 self._check_memory(ticker, rsi),
                 self._check_sentiment(ticker),
+                self._check_researcher(ticker),
                 return_exceptions=True,
             )
-            guards = ["memory", "sentiment"]
-            exceptions_fatal = set()
+            guards = ["memory", "sentiment", "researcher"]
+            exceptions_fatal = {"researcher"}
         else:
             results = await asyncio.gather(
                 self._check_advocate(ticker, direction, qty, price, reason),
@@ -329,6 +341,9 @@ class StrategyAgent:
                 if ticker in wallet_instance.positions:
                     continue
                 if len(prices) < self.rsi_period:
+                    continue
+                # Per-ticker circuit breaker
+                if ticker in self._ticker_cooldown_until and now < self._ticker_cooldown_until[ticker]:
                     continue
                 score = self._score_ticker(ticker, list(prices))
                 if score > -500 and prices[-1] > 0:
@@ -761,6 +776,8 @@ class StrategyAgent:
         """Background task: subscribes to trade:result to track consecutive losses."""
         import redis.asyncio as redis
         while True:
+            r = None
+            pubsub = None
             try:
                 r = redis.Redis.from_url(self.redis_url)
                 pubsub = r.pubsub()
@@ -775,6 +792,7 @@ class StrategyAgent:
                         continue
                     status = data.get("status", "")
                     pnl = float(data.get("pnl_percent", 0))
+                    ticker = data.get("ticker", "")
                     if status == "LOSS" and pnl < 0:
                         self._consecutive_losses += 1
                         logger.info(f"Strategy: consecutive losses = {self._consecutive_losses}")
@@ -782,10 +800,30 @@ class StrategyAgent:
                             cooldown = asyncio.get_event_loop().time() + 600
                             self._loss_cooldown_until = cooldown
                             logger.warning(f"Strategy: 3+ consecutive losses — cooldown until {cooldown:.0f}")
+                        # Per-ticker circuit breaker
+                        if ticker:
+                            t_losses = self._ticker_losses.get(ticker, [])
+                            t_losses.append(pnl)
+                            self._ticker_losses[ticker] = t_losses[-5:]
+                            if len(t_losses) >= 3 and all(l < 0 for l in t_losses[-3:]):
+                                cd = asyncio.get_event_loop().time() + 1800
+                                self._ticker_cooldown_until[ticker] = cd
+                                logger.warning(f"Strategy: {ticker} BLOCKED — 3 consecutive losses, 30min cooldown")
                     elif status == "WIN":
                         self._consecutive_losses = 0
-                await pubsub.unsubscribe("trade:result")
-                await r.aclose()
+                        if ticker:
+                            self._ticker_losses.pop(ticker, None)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Strategy: trade:result listener error: {e}")
                 await asyncio.sleep(10)
+            finally:
+                try:
+                    if pubsub:
+                        await pubsub.unsubscribe("trade:result")
+                        await pubsub.close()
+                    if r:
+                        await r.aclose()
+                except Exception:
+                    pass

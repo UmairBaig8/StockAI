@@ -105,7 +105,6 @@ async def lifespan(app: FastAPI):
     from .events import store as event_store
     await w.load_from_db()
     await event_store.load_from_db()
-    await strategy.restore_state()
     asyncio.create_task(bridge.start())
     asyncio.create_task(strategy.run())
     asyncio.create_task(start_news_poller(900))

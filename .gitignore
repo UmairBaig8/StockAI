@@ -58,3 +58,7 @@ stockai-key.pem
 
 # Local overrides
 .env.local
+
+# Accidental secret dumps
+.imp
+execution/execution-bin-linux

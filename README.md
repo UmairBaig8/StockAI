@@ -164,6 +164,16 @@ bash aws-update.sh
 
 ## AWS Infrastructure
 
+### Deploy (via Terraform)
+
+```bash
+cd devserver/terraform
+cp terraform.tfvars.example terraform.tfvars   # fill in tokens
+terraform init && terraform apply
+```
+
+One EC2 instance runs everything: StockAI app + code-server + Telegram bot. See [devserver/README.md](devserver/README.md) for full docs.
+
 ### Auto Start/Stop Schedule
 
 | Event | Time (IST) | Action |
@@ -171,37 +181,41 @@ bash aws-update.sh
 | **Start** | 8:30 AM Mon-Fri | EC2 start + Elastic IP associate |
 | **Stop** | 3:30 PM Mon-Fri | EBS snapshot → EC2 stop |
 
+### Current Deployment
+
+| Field | Value |
+|-------|-------|
+| **Instance ID** | `i-0ef6c5e6ee869eb14` |
+| **Elastic IP** | `100.28.190.112` |
+| **Dashboard** | http://100.28.190.112:8000 |
+| **Code Server** | http://100.28.190.112:8443 (via Telegram `/start`) |
+
 ### Cost Breakdown
 
 | Item | Monthly |
 |------|---------|
 | EC2 t3.medium (scheduled) | ~$13 |
-| Elastic IP (idle hours) | ~$3.60 |
 | EBS snapshots (30 days) | ~$1.50 |
 | Lambda + EventBridge | Free |
 | LLM (DeepSeek) | $0.50–$3 |
-| **Total** | **~$18–$21/mo** |
+| **Total** | **~$15–$18/mo** |
 
 ### Operations
 
 ```bash
 # Status
-bash aws_deploy/scripts/status.sh
-
-# Manual start/stop
-aws lambda invoke --function-name stockai-scheduler --cli-binary-format raw-in-base64-out --payload '{"action":"start"}' /dev/stdout
-aws lambda invoke --function-name stockai-scheduler --cli-binary-format raw-in-base64-out --payload '{"action":"stop"}' /dev/stdout
+curl http://100.28.190.112:8000/api/v1/health
 
 # View logs
-bash aws_deploy/scripts/logs.sh all
+ssh -i devserver/terraform/devserver-key.pem ubuntu@100.28.190.112 \
+  'sudo docker logs devserver-memory-1 --tail 50'
 
-# Reset data (fresh start)
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker exec stockai-postgres-1 psql -U stockai -d stockai -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker exec stockai-redis-1 redis-cli FLUSHALL'
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker exec stockai-memory-1 rm -rf /data/lancedb/*'
+# Manual start/stop
+aws lambda invoke --function-name stockai-devserver-scheduler \
+  --payload '{"action":"start"}' /dev/stdout --region us-east-1
 ```
 
-Full AWS docs: [aws_deploy/README.md](aws_deploy/README.md)
+Full AWS docs: [aws_env.md](aws_env.md) | [devserver/README.md](devserver/README.md)
 
 ## Project Structure
 
@@ -242,8 +256,13 @@ StockAI/
 │   ├── scheduler/               # IST-aware task scheduler
 │   ├── telegram/                # Telegram Bot API client
 │   └── token/                   # TOTP generation/validation
-├── aws_deploy/                  # AWS infrastructure
-│   ├── README.md                # Full AWS documentation
+├── devserver/                    # AWS deployment (Terraform + Docker + Bot)
+│   ├── README.md                  # DevServer documentation
+│   ├── terraform/                 # Infrastructure as code
+│   ├── bot/                       # Telegram dev control bot
+│   └── docker-compose.yml         # All 7 services
+├── aws_deploy/                    # Legacy AWS scripts (deprecated)
+│   ├── README.md                  # Full AWS documentation
 │   ├── cloudformation/          # Lambda + EventBridge IaC
 │   └── scripts/                 # setup, teardown, status, logs, snapshot
 ├── docker-compose.yml           # 5 services: redis, postgres, memory, orchestrator, engine

@@ -1,24 +1,23 @@
 # StockAI AWS Environment
 
-> **For AI agents:** Read this file first for quick reference. Full documentation: [aws_deploy/README.md](aws_deploy/README.md). Skills: [SKILLS.md](SKILLS.md)
+> **For AI agents:** Read this file first for quick reference. Full docs: [devserver/README.md](devserver/README.md)
 
 ## Quick Reference
 
 | Field | Value |
 |-------|-------|
-| **Instance ID** | `i-0845fd29ea0f8b328` |
-| **Elastic IP** | `52.70.58.6` (static, never changes) |
-| **EIP Allocation ID** | `eipalloc-044a7a75729bf849b` |
+| **Instance ID** | `i-0ef6c5e6ee869eb14` |
+| **Elastic IP** | `100.28.190.112` (static, never changes) |
 | **Region** | `us-east-1` (N. Virginia) |
 | **Type** | `t3.medium` (2 vCPU, 4 GB RAM) |
-| **AMI** | Amazon Linux 2023 |
-| **EBS** | 20 GB gp3 |
-| **Key Pair** | `stockai-key.pem` (in repo root) |
-| **Security Group** | `sg-0e816e1f85a798bf1` (ports 22, 8000, 8080, 9001) |
+| **AMI** | Ubuntu 22.04 LTS |
+| **EBS** | 30 GB gp3 |
+| **Key Pair** | `devserver-key.pem` (in `devserver/terraform/`) |
+| **Security Group** | `sg-03247e83c895dd023` (ports 22, 8000, 8080, 8443) |
 | **State** | Running |
 | **Account ID** | `arn:aws:iam::453767499603:root` |
-| **Scheduler** | Mon-Fri 9:00 AM - 3:30 PM IST (auto start/stop) |
-| **Snapshots** | Daily EBS, 30-day retention (SEBI audit) |
+| **Scheduler** | Mon-Fri 8:30 AM - 3:30 PM IST (auto start/stop) |
+| **Snapshots** | Daily EBS, 30-day retention |
 
 ## Services
 
@@ -27,151 +26,115 @@
 | **Memory** | 8000 | Python (FastAPI + DeepSeek) | Running |
 | **Orchestrator** | 8080 | Go (Redis pub/sub, scheduler) | Running |
 | **Engine** | 9001 (internal) | Rust (execution engine) | Running |
+| **Bot** | — | Python (dev control via Telegram) | Running |
 | **Redis** | 6379 | Redis 7 Alpine | Healthy |
 | **PostgreSQL** | 5432 | Postgres 16 Alpine | Healthy |
+| **Code-Server** | 8443 (on-demand) | VS Code in browser | `/start` via Telegram |
 
 ## Endpoints
 
 | URL | Description |
 |-----|-------------|
-| `http://52.70.58.6:8000` | Dashboard (real-time) |
-| `http://52.70.58.6:8000/api/v1/health` | Health check |
-| `http://52.70.58.6:8000/api/v1/services` | Service statuses |
-| `http://52.70.58.6:8000/api/v1/wallet` | Wallet status |
-| `http://52.70.58.6:8000/api/v1/dash` | Trade history + summary |
-| `http://52.70.58.6:8000/api/v1/quote/{TICKER}` | Live market quote |
-| `http://52.70.58.6:8080` | TOTP 2FA relay |
+| `http://100.28.190.112:8000` | Dashboard (real-time) |
+| `http://100.28.190.112:8000/api/v1/health` | Health check |
+| `http://100.28.190.112:8000/api/v1/services` | Service statuses |
+| `http://100.28.190.112:8000/api/v1/wallet` | Wallet status |
+| `http://100.28.190.112:8000/api/v1/dash` | Trade history + summary |
+| `http://100.28.190.112:8000/api/v1/quote/{TICKER}` | Live market quote |
+| `http://100.28.190.112:8000/api/v1/strategy/status` | Strategy debug |
+| `http://100.28.190.112:8443` | VS Code (on-demand via Telegram `/start`) |
 
 ## SSH
 
 ```bash
-ssh -i stockai-key.pem ec2-user@52.70.58.6
+ssh -i devserver/terraform/devserver-key.pem ubuntu@100.28.190.112
 ```
-
----
 
 ## Quick Operations
 
-### Deploy (fresh instance)
+### Deploy (via Terraform)
 
 ```bash
-bash aws-deploy.sh
+cd devserver/terraform
+cp terraform.tfvars.example terraform.tfvars   # fill in tokens
+terraform init && terraform apply
 ```
 
-Creates new t3.medium (20GB EBS), copies `.env` + `execution-bin`, builds & starts all services.
-
-### Update (existing instance)
+### Update Code
 
 ```bash
-bash aws-update.sh                  # reads IP from this file
-bash aws-update.sh 52.70.58.6   # specific IP
+git push                                              # local
+ssh -i devserver/terraform/devserver-key.pem ubuntu@100.28.190.112
+cd /opt/stockai && git pull
+cd devserver && sudo docker compose -f docker-compose.yml up -d --build memory
 ```
 
-Git pull → rebuilds changed services → restarts. Detects Rust changes automatically.
-
-### Check status
+### Check Status
 
 ```bash
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker compose -f /root/stockai/docker-compose.yml ps'
-curl -s http://52.70.58.6:8000/api/v1/health
-curl -s http://52.70.58.6:8000/api/v1/services
+curl -s http://100.28.190.112:8000/api/v1/health
+ssh -i devserver/terraform/devserver-key.pem ubuntu@100.28.190.112 \
+  'sudo docker compose -f /opt/stockai/devserver/docker-compose.yml ps'
 ```
 
-### View logs
+### View Logs
 
 ```bash
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker logs stockai-memory-1 --tail 50'
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker logs stockai-engine-1 --tail 50'
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker logs stockai-orchestrator-1 --tail 50'
+ssh -i devserver/terraform/devserver-key.pem ubuntu@100.28.190.112 \
+   'sudo docker logs devserver-memory-1 --tail 50'
 ```
 
-### Manual rebuild (single service)
+### Emergency Halt
+
+Send `/halt` to the dev Telegram bot. Send `/resume` to re-enable.
+
+### Manual Start/Stop Instance
 
 ```bash
-# Memory (Python) — fast
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo bash -c "cd /root/stockai && docker compose build memory && docker compose up -d memory"'
-
-# Engine (Rust) — needs execution-bin uploaded first
-scp -i stockai-key.pem execution/execution-bin ec2-user@52.70.58.6:/tmp/execution-bin
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo bash -c "cp /tmp/execution-bin /root/stockai/execution/execution-bin && cd /root/stockai && docker compose build engine && docker compose up -d engine"'
+aws lambda invoke --function-name stockai-devserver-scheduler \
+  --payload '{"action":"start"}' /dev/stdout --region us-east-1
+aws lambda invoke --function-name stockai-devserver-scheduler \
+  --payload '{"action":"stop"}' /dev/stdout --region us-east-1
 ```
-
-### Enable paper trading
-
-```bash
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo docker exec stockai-redis-1 redis-cli SET 2fa:active "paper-mode"'
-```
-
-### Free disk space
-
-```bash
-ssh -i stockai-key.pem ec2-user@52.70.58.6 'sudo bash -c "cd /root/stockai && docker compose down && docker system prune -af --volumes && docker compose up -d"'
-```
-
-### Terminate
-
-```bash
-aws ec2 terminate-instances --instance-ids i-0845fd29ea0f8b328 --region us-east-1
-aws ec2 delete-security-group --group-id sg-0e816e1f85a798bf1 --region us-east-1
-```
-
----
 
 ## Architecture
 
 ```
-Client → :8000 → Memory (FastAPI + Python)
-                    ├── Strategy Agent (RSI, MACD, BB, forced trades)
-                    ├── Market Data (yfinance polling 2s)
-                    ├── Vector Store (LanceDB — postmortems + memory)
-                    ├── LLM Providers (DeepSeek, Gemini, OpenAI, Bedrock)
-                    └── WebSocket feeds (/ws/market, /ws/dashboard, /ws/services, /ws/wallet)
-
-Client → :8080 → Orchestrator (Go)
-                    ├── Redis pub/sub (trade:signal → trade:result)
-                    ├── TOTP 2FA relay
-                    └── Scheduler
-
-Engine → :9001 → Execution Engine (Rust)
-                    ├── Subscribes trade:signal on Redis
-                    ├── Mock broker (paper trading)
-                    └── Health check HTTP server
-
-Redis :6379 — pub/sub + 2fa:active key + position persistence
-PostgreSQL :5432 — trade history + wallet state + daily reports
+EC2 (t3.medium, Ubuntu 22.04, 30GB gp3)
+│
+├── Docker Compose
+│   ├── redis        — :6379  (persistence, pub/sub)
+│   ├── postgres     — :5432  (trades, wallet, events, LLM traces)
+│   ├── memory       — :8000  (FastAPI: strategy, market data, dashboard)
+│   ├── orchestrator — :8080  (Go: app bot, scheduler, Redis bridge)
+│   ├── engine       — :9001  (Rust: trade execution, mock broker)
+│   ├── code-server  — :8443  (VS Code in browser, on-demand)
+│   └── bot          —        (Telegram dev control, healthcheck)
+│
+├── systemd: stockai-devserver (auto-start on reboot)
+├── EventBridge + Lambda: auto start/stop Mon-Fri
+└── Elastic IP: static, auto re-associated on start
 ```
 
-## Pipeline Flow
+## Strategy Controls
 
-1. **Market Data** polls yfinance every 2s → pushes quotes via WebSocket
-2. **Strategy Agent** scans for RSI/MACD/BB signals → forced trade every 5 min if no signal
-3. Pre-trade checks: memory (LanceDB), sentiment, advocate, researcher, macro
-4. Signal published to Redis `trade:signal`
-5. **Engine** receives signal → mock execution → publishes `trade:result`
-6. **Strategy** listens to `trade:result` → tracks consecutive losses
-7. Losses trigger **Critic** postmortem → stored in LanceDB with correction rules
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `position_size_pct` | 5% (clamped 2-15%) | Per-trade position size |
+| `max_positions` | 3 (clamped 1-8) | Max concurrent positions |
+| `stop_loss_pct` | 0.8% (clamped 0.5-2%) | Stop loss |
+| `take_profit_pct` | 1.5% | Take profit target |
+| `force_trade_sec` | 600s | Max idle before forced trade |
 
-## Paper Trading Config
-
-- `MOCK_MODE=true` in engine env
-- Redis key `2fa:active = "paper-mode"` bypasses 2FA check
-- Engine publishes OPEN/WIN/LOSS results to `trade:result`
-- Strategy tracks P&L, consecutive losses, daily loss limits
-
-## Known Issues
-
-- **execution-bin not in git** (103MB, in .gitignore) — must be scp'd on fresh deploy
-- **Docker Compose v2** — AL2023 ships v1 only; deploy script installs v2 plugin
-- **yfinance TzCache error** — harmless, cache folder exists but not used
+All configurable at `/settings` or via UI. Guardrails enforced in `settings_store.py`.
 
 ## Deployment History
 
-| Date | Commit | Change |
-|------|--------|--------|
-| 2026-05-20 | `0787add` | Fresh deploy on new instance (52.70.58.6) — t3.medium, 20GB EBS |
-| 2026-05-20 | `1bb2804` | Deploy script: full .env copy, execution-bin upload, compose v2 install |
-| 2026-05-20 | `259f79a` | Skip 2FA check in MOCK_MODE (engine) |
-| 2026-05-20 | `819b498` | Dashboard WS periodic push every 5s |
-| 2026-05-20 | `10c6476` | Fix main.py indentation bug (WS routes orphaned) |
-| 2026-05-18 | `7d35722` | Forced paper trades every 5 min |
-| 2026-05-18 | `dfca196` | Initial AWS deploy |
+| Date | Change |
+|------|--------|
+| 2026-05-22 | Terraform devserver deploy (100.28.190.112) — replaces old 52.70.58.6 |
+| 2026-05-22 | Scheduler: Lambda + EventBridge auto start/stop Mon-Fri |
+| 2026-05-22 | Telegram dev bot: /halt /resume /forcebuy /start /stop |
+| 2026-05-22 | GitHub Actions CI (Python lint + Go build + Rust check) |
+| 2026-05-21 | Persistence fixes + per-ticker circuit breakers + guardrails |
+| 2026-05-20 | Initial AWS deploy (52.70.58.6) |

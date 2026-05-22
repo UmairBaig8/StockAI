@@ -64,7 +64,21 @@ Send to your **dev bot** (not the StockAI app bot):
 | `/status` | Check dev + app container states |
 | `/exec <cmd>` | Run command inside code-server |
 | `/app start\|stop\|restart` | Control StockAI trading services |
+| `/halt` | EMERGENCY: stop all trading |
+| `/resume` | Re-enable trading after halt |
+| `/forcebuy <TICKER>` | Force buy a ticker |
 | `/setidle <min>` | Change auto-stop timer (default 30min) |
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Auto start/stop** | EventBridge + Lambda: Mon-Fri 8:30 AM IST start, 3:30 PM IST stop |
+| **EBS Snapshots** | Daily on stop, 30-day retention |
+| **EIP Re-associate** | Auto on start |
+| **Healthcheck monitor** | Auto-detect crashed containers, Telegram alert, auto-restart |
+| **CI Pipeline** | GitHub Actions: Python lint + Go build + Rust check on push |
+| **Kill-switch** | `/halt` sets Redis flag, strategy checks every 30s |
 
 ## Workspace
 

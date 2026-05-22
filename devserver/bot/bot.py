@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import boto3
 import docker
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
@@ -216,8 +216,21 @@ def main():
     app.add_handler(CommandHandler("app", cmd_app))
     app.add_handler(CommandHandler("setidle", cmd_setidle))
 
+    # Register command hints in Telegram UI
+    async def set_commands():
+        await app.bot.set_my_commands([
+            BotCommand("start", "Launch VS Code dev environment"),
+            BotCommand("stop", "Stop VS Code"),
+            BotCommand("status", "Check dev + app status"),
+            BotCommand("url", "Get code-server + dashboard URLs"),
+            BotCommand("exec", "Run command in code-server"),
+            BotCommand("app", "Control StockAI: start/stop/restart"),
+            BotCommand("setidle", "Set auto-stop minutes"),
+        ])
+
     loop = asyncio.get_event_loop()
     loop.create_task(auto_stop_loop())
+    loop.create_task(set_commands())
 
     logger.info("DevServer bot started")
     app.run_polling(drop_pending_updates=True)

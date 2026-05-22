@@ -46,6 +46,8 @@ services:
       - DATABASE_URL=postgresql://stockai:stockai@postgres:5432/stockai
     volumes:
       - memory_data:/data
+    ports:
+      - "8000:8000"
     depends_on:
       redis:
         condition: service_healthy
@@ -64,6 +66,8 @@ services:
       - MEMORY_URL=http://memory:8000
       - RELAY_URL=${RELAY_URL:-http://localhost:8080}
       - HTTP_PORT=8080
+    ports:
+      - "8080:8080"
     depends_on:
       redis:
         condition: service_healthy

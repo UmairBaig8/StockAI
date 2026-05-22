@@ -81,6 +81,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 volumes={
                     "devserver_workspace": {"bind": "/workspace", "mode": "rw"},
                     "devserver_code_server_config": {"bind": "/config", "mode": "rw"},
+                    "/opt/stockai": {"bind": "/workspace/StockAI", "mode": "ro"},
                 },
                 restart_policy={"Name": "no"},
                 network=net,

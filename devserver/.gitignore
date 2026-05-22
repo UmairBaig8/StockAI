@@ -8,6 +8,3 @@
 terraform.tfvars
 *.pem
 .env
-
-# Docker
-Dockerfile.codeserver

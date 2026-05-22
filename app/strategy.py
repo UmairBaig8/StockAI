@@ -205,6 +205,15 @@ class StrategyAgent:
         asyncio.create_task(self._listen_trade_results())
 
         while True:
+            # Check trading halt flag
+            try:
+                r = await self._get_redis()
+                halted = await r.get("trading:halt")
+                if halted and halted.decode() == "1":
+                    await asyncio.sleep(30)
+                    continue
+            except Exception:
+                pass
             is_open = self._is_market_open()
             await asyncio.sleep(15 if is_open else 300)
 

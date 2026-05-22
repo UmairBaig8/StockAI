@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 import time
 import logging
 from datetime import datetime, timezone
@@ -81,7 +82,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 volumes={
                     "devserver_workspace": {"bind": "/workspace", "mode": "rw"},
                     "devserver_code_server_config": {"bind": "/config", "mode": "rw"},
-                    "/opt/stockai": {"bind": "/workspace/StockAI", "mode": "ro"},
+                    "/opt/stockai": {"bind": "/workspace/StockAI", "mode": "rw"},
                 },
                 restart_policy={"Name": "no"},
                 network=net,
@@ -195,6 +196,90 @@ async def cmd_setidle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Auto-stop: {AUTO_STOP_MINUTES}min")
 
 
+async def cmd_halt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Emergency stop: halt all trading."""
+    if not check_auth(update):
+        return
+    import redis as sync_redis
+    try:
+        r = sync_redis.Redis(host="redis", port=6379, socket_timeout=5)
+        r.set("trading:halt", "1")
+        r.close()
+        await update.message.reply_text("EMERGENCY HALT - All trading stopped. Use /resume to re-enable.")
+    except Exception as e:
+        await update.message.reply_text(f"Halt failed: {e}")
+
+
+async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Re-enable trading after halt."""
+    if not check_auth(update):
+        return
+    import redis as sync_redis
+    try:
+        r = sync_redis.Redis(host="redis", port=6379, socket_timeout=5)
+        r.delete("trading:halt")
+        r.close()
+        await update.message.reply_text("Trading resumed.")
+    except Exception as e:
+        await update.message.reply_text(f"Resume failed: {e}")
+
+
+async def cmd_forcebuy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/forcebuy <TICKER> — force a buy trade."""
+    if not check_auth(update):
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /forcebuy <TICKER>")
+        return
+    ticker = context.args[0].upper()
+    import redis as sync_redis
+    try:
+        r = sync_redis.Redis(host="redis", port=6379, socket_timeout=5)
+        trade = {
+            "ticker": ticker,
+            "exchange": "NSE",
+            "direction": "BUY",
+            "quantity": 1,
+            "price": 0,
+            "reason": "Manual /forcebuy via Telegram",
+            "timestamp": __import__("datetime").datetime.now().isoformat(),
+        }
+        r.publish("trade:signal", json.dumps(trade))
+        r.close()
+        await update.message.reply_text(f"Forced BUY {ticker}. Engine will execute.")
+    except Exception as e:
+        await update.message.reply_text(f"Forcebuy failed: {e}")
+
+
+async def healthcheck_loop():
+    """Monitor container health and alert on failures."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            for name in CORE_CONTAINERS:
+                c = get_container(name)
+                if c and c.status not in ("running", "exited", "not created"):
+                    # Container exists but not healthy
+                    pass  # Only alert on "exited" with non-zero code
+                elif c and c.status == "exited":
+                    # Check exit code
+                    attrs = c.attrs
+                    exit_code = attrs.get("State", {}).get("ExitCode", 0)
+                    if exit_code != 0:
+                        # Container crashed - alert
+                        try:
+                            app_bot = __import__("telegram").Bot(token=BOT_TOKEN)
+                            await app_bot.send_message(
+                                chat_id=ALLOWED_ID,
+                                text=f"ALERT: {name} crashed (exit={exit_code}). Restarting..."
+                            )
+                        except Exception:
+                            pass
+                        c.restart()
+        except Exception as e:
+            logger.error(f"Healthcheck error: {e}")
+
+
 async def auto_stop_loop():
     while True:
         await asyncio.sleep(60)
@@ -215,6 +300,9 @@ def main():
     app.add_handler(CommandHandler("exec", cmd_exec))
     app.add_handler(CommandHandler("app", cmd_app))
     app.add_handler(CommandHandler("setidle", cmd_setidle))
+    app.add_handler(CommandHandler("halt", cmd_halt))
+    app.add_handler(CommandHandler("resume", cmd_resume))
+    app.add_handler(CommandHandler("forcebuy", cmd_forcebuy))
 
     # Register command hints in Telegram UI
     async def set_commands():
@@ -225,11 +313,15 @@ def main():
             BotCommand("url", "Get code-server + dashboard URLs"),
             BotCommand("exec", "Run command in code-server"),
             BotCommand("app", "Control StockAI: start/stop/restart"),
+            BotCommand("halt", "EMERGENCY: stop all trading"),
+            BotCommand("resume", "Re-enable trading after halt"),
+            BotCommand("forcebuy", "Force buy a ticker"),
             BotCommand("setidle", "Set auto-stop minutes"),
         ])
 
     loop = asyncio.get_event_loop()
     loop.create_task(auto_stop_loop())
+    loop.create_task(healthcheck_loop())
     loop.create_task(set_commands())
 
     logger.info("DevServer bot started")

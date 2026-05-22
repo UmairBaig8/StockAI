@@ -137,7 +137,7 @@ async def cmd_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     port = os.environ.get("CODE_SERVER_PORT", "8443")
     pw = os.environ.get("CODE_SERVER_PASSWORD", "stockai")
     await update.message.reply_text(
-        f"Code Server: https://{ip}:{port}\n"
+        f"Code Server: http://{ip}:{port}\n"
         f"Password: {pw}\n\n"
         f"StockAI Dashboard: http://{ip}:8000\n"
         f"Health: http://{ip}:8000/api/v1/health"

@@ -8,3 +8,6 @@
 terraform.tfvars
 *.pem
 .env
+
+# Build artifacts
+scheduler.zip

@@ -164,7 +164,7 @@ output "public_ip" {
 }
 
 output "code_server_url" {
-  value = "https://${aws_eip.devserver.public_ip}:${var.code_server_port}"
+  value = "http://${aws_eip.devserver.public_ip}:${var.code_server_port}"
 }
 
 output "stockai_dashboard" {
@@ -173,4 +173,138 @@ output "stockai_dashboard" {
 
 output "ssh_command" {
   value = "ssh -i ${abspath(local_file.private_key.filename)} ubuntu@${aws_eip.devserver.public_ip}"
+}
+
+# ═══════════════════════════════════════════════════════
+# Market Hours Auto Start/Stop Scheduler
+# ═══════════════════════════════════════════════════════
+
+# ── Scheduler Lambda ──
+resource "aws_iam_role" "scheduler" {
+  name = "stockai-devserver-scheduler-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  name = "stockai-devserver-scheduler-policy"
+  role = aws_iam_role.scheduler.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:StartInstances",
+          "ec2:StopInstances",
+          "ec2:DescribeInstances",
+          "ec2:AssociateAddress",
+          "ec2:DescribeAddresses",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSnapshot",
+          "ec2:DescribeSnapshots",
+          "ec2:DeleteSnapshot",
+          "ec2:DescribeVolumes",
+          "ec2:CreateTags",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+data "archive_file" "scheduler_zip" {
+  type        = "zip"
+  source_file = "${path.module}/scheduler.py"
+  output_path = "${path.module}/scheduler.zip"
+}
+
+resource "aws_lambda_function" "scheduler" {
+  filename         = data.archive_file.scheduler_zip.output_path
+  function_name    = "stockai-devserver-scheduler"
+  role             = aws_iam_role.scheduler.arn
+  handler          = "scheduler.handler"
+  runtime          = "python3.13"
+  timeout          = 120
+  source_code_hash = data.archive_file.scheduler_zip.output_base64sha256
+
+  environment {
+    variables = {
+      INSTANCE_ID             = aws_instance.devserver.id
+      EIP_ALLOCATION_ID       = aws_eip.devserver.allocation_id
+      SNAPSHOT_RETENTION_DAYS = "30"
+    }
+  }
+}
+
+# ── EventBridge Scheduler ──
+resource "aws_iam_role" "scheduler_events" {
+  name = "stockai-devserver-scheduler-events-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = { Service = "scheduler.amazonaws.com" }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "scheduler_events" {
+  name = "stockai-devserver-scheduler-events-policy"
+  role = aws_iam_role.scheduler_events.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["lambda:InvokeFunction"]
+      Resource = [aws_lambda_function.scheduler.arn]
+    }]
+  })
+}
+
+# 8:30 AM IST = 3:00 AM UTC (Mon-Fri)
+resource "aws_scheduler_schedule" "start" {
+  name                = "stockai-devserver-start"
+  schedule_expression = "cron(0 3 ? * MON-FRI *)"
+  flexible_time_window { mode = "OFF" }
+
+  target {
+    arn      = aws_lambda_function.scheduler.arn
+    role_arn = aws_iam_role.scheduler_events.arn
+    input    = jsonencode({ action = "start" })
+  }
+}
+
+# 3:30 PM IST = 10:00 AM UTC (Mon-Fri)
+resource "aws_scheduler_schedule" "stop" {
+  name                = "stockai-devserver-stop"
+  schedule_expression = "cron(0 10 ? * MON-FRI *)"
+  flexible_time_window { mode = "OFF" }
+
+  target {
+    arn      = aws_lambda_function.scheduler.arn
+    role_arn = aws_iam_role.scheduler_events.arn
+    input    = jsonencode({ action = "stop" })
+  }
 }

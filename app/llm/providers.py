@@ -32,7 +32,16 @@ def _record_trace(agent: str, provider: str, model: str, prompt_chars: int,
         "response": response_text[:2000] if response_text else "",
     }
     _trace_buffer.append(trace)
-    await _persist_trace(trace)
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(_persist_trace(trace))
+        else:
+            asyncio.run(_persist_trace(trace))
+    except RuntimeError:
+        import asyncio as _asyncio
+        _asyncio.run(_persist_trace(trace))
 
 
 async def _persist_trace(trace: dict):

@@ -1,0 +1,130 @@
+services:
+  # ── Infrastructure (always on) ──
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=stockai
+      - POSTGRES_PASSWORD=stockai
+      - POSTGRES_DB=stockai
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockai"]
+      interval: 5s
+      retries: 5
+
+  # ── StockAI App ──
+  memory:
+    build:
+      context: ..
+      dockerfile: Dockerfile.memory
+    restart: unless-stopped
+    environment:
+      - MEMORY_LLM_PROVIDER=${MEMORY_LLM_PROVIDER:-deepseek}
+      - MEMORY_DEEPSEEK_API_KEY=${MEMORY_DEEPSEEK_API_KEY}
+      - MEMORY_DEEPSEEK_MODEL=${MEMORY_DEEPSEEK_MODEL:-deepseek-chat}
+      - MEMORY_GEMINI_API_KEY=${MEMORY_GEMINI_API_KEY:-}
+      - MEMORY_OPENAI_API_KEY=${MEMORY_OPENAI_API_KEY:-}
+      - MEMORY_ANTHROPIC_API_KEY=${MEMORY_ANTHROPIC_API_KEY:-}
+      - MEMORY_AWS_ACCESS_KEY_ID=${MEMORY_AWS_ACCESS_KEY_ID:-}
+      - MEMORY_AWS_SECRET_ACCESS_KEY=${MEMORY_AWS_SECRET_ACCESS_KEY:-}
+      - MEMORY_AWS_REGION=${MEMORY_AWS_REGION:-us-east-1}
+      - MEMORY_BEDROCK_MODEL=${MEMORY_BEDROCK_MODEL:-}
+      - MEMORY_LANCE_DB_PATH=/data/lancedb
+      - REDIS_ADDR=redis://redis:6379
+      - MEMORY_URL=http://memory:8000
+      - DOCKER_MODE=1
+      - DATABASE_URL=postgresql://stockai:stockai@postgres:5432/stockai
+    volumes:
+      - memory_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: Dockerfile.orchestrator
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-test}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-test}
+      - REDIS_ADDR=redis:6379
+      - MEMORY_URL=http://memory:8000
+      - RELAY_URL=${RELAY_URL:-http://localhost:8080}
+      - HTTP_PORT=8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      memory:
+        condition: service_started
+
+  engine:
+    build:
+      context: ../execution
+      dockerfile: Dockerfile
+      args:
+        BUILD_MODE: ${BUILD_MODE:-debug}
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - BROKER_WS_URL=ws://memory:8000/ws/market
+      - BROKER_REST_URL=http://memory:8000
+      - MOCK_MODE=true
+      - RUST_LOG=info
+    depends_on:
+      redis:
+        condition: service_healthy
+      memory:
+        condition: service_started
+
+  # ── Dev Environment (on-demand via Telegram bot) ──
+  code-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.codeserver
+    container_name: devbox
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PASSWORD=${CODE_SERVER_PASSWORD:-stockai}
+      - DEFAULT_WORKSPACE=/workspace
+    volumes:
+      - workspace:/workspace
+      - code_server_config:/config
+    ports:
+      - "${CODE_SERVER_PORT:-8443}:8443"
+    restart: "no"
+    profiles:
+      - dev
+
+  bot:
+    build:
+      context: ./bot
+    container_name: devserver-bot
+    environment:
+      - BOT_TOKEN=${DEV_BOT_TOKEN}
+      - ALLOWED_TELEGRAM_ID=${ALLOWED_TELEGRAM_ID}
+      - AUTO_STOP_MINUTES=${AUTO_STOP_MINUTES:-30}
+      - INSTANCE_ID=${INSTANCE_ID}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: always
+
+volumes:
+  memory_data:
+  pg_data:
+  workspace:
+  code_server_config:

@@ -39,9 +39,26 @@ class OptimizerBridge:
         if ws in self.clients:
             self.clients.remove(ws)
 
+    def _send_telegram(self, message: str):
+        """Send message via Telegram bot."""
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if not token or not chat_id:
+            return
+        try:
+            import httpx
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            httpx.post(url, json={"chat_id": chat_id, "text": message})
+        except Exception as e:
+            logger.error(f"Telegram notification failed: {e}")
+
     def push(self, result: dict):
         self.last_result = result
         self._save()
+        # Notify Telegram
+        msg = f"🚀 AI Strategy Optimization:\n{result.get('analysis', {}).get('main_issue', 'Analysis complete')}"
+        self._send_telegram(msg)
+        
         payload = json.dumps({"type": "optimizer", "result": result})
         dead = []
         for ws in self.clients:

@@ -1,0 +1,30 @@
+# ═══════════════════════════════════════════════════════════════
+# StockAI DevServer — Required Configuration
+# Copy to: terraform.tfvars   (gitignored, never commit)
+# ═══════════════════════════════════════════════════════════════
+
+# ── DevServer Telegram Bot (create via @BotFather: /newbot) ──
+# Controls: /start /stop /status /url /exec /app /setidle
+dev_bot_token       = ""   # Bot token from @BotFather
+allowed_telegram_id = ""   # Your Telegram user ID from @userinfobot
+
+# ── StockAI App Bot (existing — already running) ──
+# Controls: trade alerts, P&L reports, optimizer suggestions
+telegram_bot_token = ""   # App bot token from @BotFather (8906698066:...)
+telegram_chat_id   = ""   # Chat ID where app sends notifications (7775593886)
+
+# ── LLM API Keys (for StockAI trading) ──
+deepseek_api_key     = ""   # Primary LLM (sk-...)
+gemini_api_key       = ""   # Fallback LLM
+openai_api_key       = ""   # Fallback LLM
+anthropic_api_key    = ""   # Fallback LLM
+aws_access_key_id    = ""   # AWS Bedrock (Claude)
+aws_secret_access_key = ""  # AWS Bedrock
+bedrock_model        = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+
+# ── DevServer Settings (optional, defaults shown) ──
+instance_type        = "t3.medium"
+auto_stop_minutes    = "30"
+code_server_password = "stockai"
+code_server_port     = "8443"
+aws_region           = "us-east-1"

@@ -32,17 +32,16 @@ def _record_trace(agent: str, provider: str, model: str, prompt_chars: int,
         "response": response_text[:2000] if response_text else "",
     }
     _trace_buffer.append(trace)
-    _persist_trace(trace)
+    await _persist_trace(trace)
 
 
 async def _persist_trace(trace: dict):
-    """Persist trace to PostgreSQL (fire-and-forget)."""
+    """Persist trace to PostgreSQL."""
     try:
-        import asyncio
         from .db import save_llm_trace
-        asyncio.ensure_future(save_llm_trace(trace))
-    except Exception:
-        pass
+        await save_llm_trace(trace)
+    except Exception as e:
+        logger.error(f"Failed to persist trace: {e}")
 
 
 def get_traces(limit: int = 100) -> list[dict]:

@@ -51,30 +51,37 @@ def load() -> dict[str, Any]:
     return cfg
 
 
+# Risk Guardrails (SEBI/Safety)
+BOUNDS = {
+    "position_size_pct": (2.0, 15.0),
+    "stop_loss_pct": (0.5, 2.0),
+    "max_positions": (1, 8),
+}
+
 def save(data: dict[str, Any]) -> dict[str, Any]:
     safe = {}
     for k, v in data.items():
         if k in DEFAULTS:
             dtype = type(DEFAULTS[k])
             try:
-                if dtype == int:
-                    safe[k] = int(v)
-                elif dtype == float:
-                    safe[k] = float(v)
-                else:
-                    safe[k] = str(v)
+                val = dtype(v)
+                # Apply bounds validation
+                if k in BOUNDS:
+                    min_val, max_val = BOUNDS[k]
+                    val = max(min_val, min(max_val, val))
+                safe[k] = val
             except (ValueError, TypeError):
                 logger.warning(f"Invalid value for {k}: {v}")
-
+    
     SETTINGS_PATH.write_text(json.dumps(safe, indent=2))
-    logger.info(f"Settings saved: {list(safe.keys())}")
-
+    logger.info(f"Settings saved with guardrails: {list(safe.keys())}")
+    
     for cb in _callbacks:
         try:
             cb(safe)
         except Exception as e:
             logger.error(f"Settings callback error: {e}")
-
+    
     return load()
 
 

@@ -321,8 +321,12 @@ class StrategyAgent:
 
                 had_signal = True
 
-                # Size: max 5% of wallet
-                notional = wallet_instance.available * (self.max_position_pct / 100)
+                # Aggressive EoD push if pnl < 0
+                if current_equity < self._daily_start_equity and open_count < self.max_positions and signal["direction"] == "BUY":
+                    notional = wallet_instance.available * 0.8  # Aggressive: 80% available
+                else:
+                    notional = wallet_instance.available * (self.max_position_pct / 100)
+                
                 qty = max(1, int(notional / current))
 
                 if signal["direction"] == "BUY" and notional > wallet_instance.available:
